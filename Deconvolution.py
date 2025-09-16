@@ -5,6 +5,7 @@ from scipy.signal import find_peaks
 from scipy.integrate import trapezoid
 from scipy.interpolate import interp1d
 import pandas as pd
+import streamlit as st
 
 
 def gpc_deconvolution(
