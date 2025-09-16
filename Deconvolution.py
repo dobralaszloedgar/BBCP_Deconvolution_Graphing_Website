@@ -35,6 +35,7 @@ def run_deconvolution(
     """
     Perform GPC deconvolution to separate overlapping peaks in chromatogram data.
 
+
     Parameters:
     data_array: GPC data with retention time and response columns
     calib_array: Calibration data with retention time and log(MW) columns
@@ -62,7 +63,8 @@ def run_deconvolution(
     results_df: Results table with peak information
     """
 
-    # Set font properties for the entire figure
+    # Create a fresh figure with specific font settings
+    plt.rcParams.update(plt.rcParamsDefault)  # Reset to defaults
     plt.rcParams['font.family'] = font_family
     plt.rcParams['font.size'] = font_size
 
@@ -287,26 +289,35 @@ def run_deconvolution(
     ax.set_xlim(mw_lim)
     ax.set_ylim(y_lim)
 
-    # Apply font styles to axis labels
-    font_dict_x = {'fontstyle': 'italic' if 'italic' in x_label_style else 'normal',
-                   'fontweight': 'bold' if 'bold' in x_label_style else 'normal'}
-    font_dict_y = {'fontstyle': 'italic' if 'italic' in y_label_style else 'normal',
-                   'fontweight': 'bold' if 'bold' in y_label_style else 'normal'}
+    # Apply font styles to axis labels with explicit font family and size
+    font_dict_x = {
+        'fontstyle': 'italic' if 'italic' in x_label_style else 'normal',
+        'fontweight': 'bold' if 'bold' in x_label_style else 'normal',
+        'fontfamily': font_family,
+        'fontsize': font_size
+    }
+    font_dict_y = {
+        'fontstyle': 'italic' if 'italic' in y_label_style else 'normal',
+        'fontweight': 'bold' if 'bold' in y_label_style else 'normal',
+        'fontfamily': font_family,
+        'fontsize': font_size
+    }
 
     ax.set_xlabel(x_label, **font_dict_x)
     ax.set_ylabel(y_label, **font_dict_y)
 
-    # Set font for all text elements in the plot
+    # Set font for all text elements in the plot with explicit family and size
     for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
                  ax.get_xticklabels() + ax.get_yticklabels()):
         item.set_fontfamily(font_family)
         item.set_fontsize(font_size)
 
-    # Set font for legend
-    legend = ax.legend()
-    for text in legend.get_texts():
-        text.set_fontfamily(font_family)
-        text.set_fontsize(font_size)
+    # Set font for legend with explicit family and size
+    if ax.get_legend():
+        legend = ax.legend()
+        for text in legend.get_texts():
+            text.set_fontfamily(font_family)
+            text.set_fontsize(font_size)
 
     ax.grid(False)
     fig.tight_layout()
