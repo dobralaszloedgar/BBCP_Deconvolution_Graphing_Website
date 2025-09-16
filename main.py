@@ -104,6 +104,8 @@ with st.expander("Basic Parameters", expanded=st.session_state.expander_basic):
 # Advanced Parameters expander
 with st.expander("Peak Colors And Names", expanded=st.session_state.expander_advanced):
     # Peak names and colors
+    original_data_color = st.color_picker("Original Data Color", value="#ef476f")
+    original_data_name = st.text_input("Original Data Name", value="Original Data")
     st.write("Peak Names And Colors:")
     default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5", "Peak 6", "Peak 7", "Peak 8", "Peak 9",
                      "Peak 10"]
@@ -133,10 +135,6 @@ with st.expander("Peak Colors And Names", expanded=st.session_state.expander_adv
 with st.expander("Appearance Settings", expanded=st.session_state.expander_appearance):
     col1, col2 = st.columns(2)
     with col1:
-        # Moved these to the Appearance Settings section as requested
-        original_data_color = st.color_picker("Original Data Color", value="#ef476f")
-        original_data_name = st.text_input("Original Data Name", value="Original Data")
-
         # Font selection
         common_fonts = ["Arial", "Times New Roman", "Helvetica", "Courier New", "Verdana",
                         "Georgia", "Palatino", "Garamond", "Comic Sans MS", "Trebuchet MS"]
