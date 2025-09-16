@@ -10,7 +10,6 @@ import matplotlib.font_manager as fm
 import os
 
 
-# Add this function at the top of the file to set up custom fonts
 def setup_custom_fonts():
     """Add custom fonts from the fonts directory to matplotlib's font manager"""
     try:
@@ -25,8 +24,8 @@ def setup_custom_fonts():
             for font_file in font_files:
                 fm.fontManager.addfont(font_file)
 
-            # Rebuild the font cache
-            fm._rebuild()
+            # Clear the cache and update font list
+            fm._load_fontmanager(try_read_cache=False)
             return True
         return False
     except Exception as e:
@@ -290,10 +289,22 @@ def run_deconvolution(
     try:
         # Check if the selected font exists
         available_fonts = [f.name for f in fm.fontManager.ttflist]
+
+        # Try to find a suitable fallback if the selected font isn't available
         if font_family not in available_fonts:
-            # Fall back to a default font that should be available
-            font_family = "DejaVu Sans"
-            st.warning(f"Font '{font_family}' not available. Using fallback font.")
+            # List of fallback fonts to try in order of preference
+            fallback_fonts = [
+                "Times New Roman", "DejaVu Serif", "Liberation Serif",
+                "Arial", "Helvetica", "DejaVu Sans", "sans-serif"
+            ]
+
+            for fallback in fallback_fonts:
+                if fallback in available_fonts:
+                    font_family = fallback
+                    break
+            else:
+                # If no fallback found, use the first available font
+                font_family = available_fonts[0] if available_fonts else "sans-serif"
 
         # Create font properties
         font_prop = fm.FontProperties(
@@ -312,13 +323,20 @@ def run_deconvolution(
                      ax.get_xticklabels() + ax.get_yticklabels()):
             item.set_fontproperties(font_prop)
 
-        # Apply to legend
+        # Set font for legend
         if ax.get_legend():
-            for text in ax.get_legend().get_texts():
-                text.set_fontproperties(font_prop)
+            legend = ax.legend(prop=font_prop)
+        else:
+            # Create legend if it doesn't exist
+            ax.legend(prop=font_prop)
 
     except Exception as e:
         st.warning(f"Could not set custom font: {str(e)}")
+        # Fallback to default font settings
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        if ax.get_legend():
+            ax.legend()
 
     ax.grid(False)
     fig.tight_layout()

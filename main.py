@@ -149,7 +149,9 @@ with st.expander("Appearance Settings", expanded=st.session_state.expander_appea
         "Times New Roman", "Trebuchet MS", "Verdana", "Webdings",
         "Wingdings"
         ])
-        font_family = st.selectbox("Font Family", common_fonts, index=0)
+        # Find the index of Times New Roman in the sorted list
+        default_font_index = common_fonts.index("Times New Roman") if "Times New Roman" in common_fonts else 0
+        font_family = st.selectbox("Font Family", common_fonts, index=default_font_index)
         font_size = st.number_input("Font Size", 8, 20, 12, step=1)
 
     with col2:
