@@ -10,8 +10,8 @@ import os
 st.title("BBCP Deconvolution")
 
 # Default file URLs (replace with your actual GitHub raw file URLs)
-DEFAULT_CAL_URL = "https://raw.githubusercontent.com/yourusername/yourrepo/main/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
-DEFAULT_DATA_URL = "https://raw.githubusercontent.com/yourusername/yourrepo/main/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
+DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
+DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
 
 
 # Function to download default files
