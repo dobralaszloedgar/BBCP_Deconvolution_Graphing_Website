@@ -126,17 +126,24 @@ with st.expander("Peak Colors And Names", expanded=st.session_state.expander_adv
                                     key=f"color_{i}")
             custom_colors.append(color)
 
+    # Moved these to the Peak Colors and Names section as requested
+    plot_sum = st.checkbox("Plot Sum Of Gaussians", False)
+
 # Appearance Parameters expander
 with st.expander("Appearance Settings", expanded=st.session_state.expander_appearance):
     col1, col2 = st.columns(2)
     with col1:
-        # Appearance settings
+        # Moved these to the Appearance Settings section as requested
         original_data_color = st.color_picker("Original Data Color", value="#ef476f")
-        original_data_name = st.text_input("Original Data Label", value="Original Data")
-        plot_sum = st.checkbox("Plot Sum Of Gaussians", False)
+        original_data_name = st.text_input("Original Data Name", value="Original Data")
 
-        # Font settings
-        font_family = st.selectbox("Font Family", ["sans-serif", "serif", "monospace", "cursive", "fantasy"], index=0)
+        # Font selection
+        common_fonts = ["Arial", "Times New Roman", "Helvetica", "Courier New", "Verdana",
+                        "Georgia", "Palatino", "Garamond", "Comic Sans MS", "Trebuchet MS"]
+        selected_font = st.selectbox("Font Family", common_fonts, index=0)
+        custom_font = st.text_input("Or Enter Custom Font", "")
+        font_family = custom_font if custom_font else selected_font
+
         font_size = st.number_input("Font Size", 8, 20, 12, step=1)
 
     with col2:
@@ -144,9 +151,12 @@ with st.expander("Appearance Settings", expanded=st.session_state.expander_appea
         fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5)
         fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5)
 
-        # Axis labels
+        # Axis labels and styles
         x_label = st.text_input("X-Axis Label", "Molecular weight (g/mol)")
+        x_label_style = st.selectbox("X-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
+
         y_label = st.text_input("Y-Axis Label", "Normalized Response")
+        y_label_style = st.selectbox("Y-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
 
 
 # Parse baseline ranges string - handle both single values and ranges
@@ -214,7 +224,9 @@ if cal_file and data_file:
             font_size=font_size,
             fig_size=(fig_width, fig_height),
             x_label=x_label,
-            y_label=y_label
+            y_label=y_label,
+            x_label_style=x_label_style,
+            y_label_style=y_label_style
         )
 
         # Display results

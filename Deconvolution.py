@@ -28,7 +28,9 @@ def run_deconvolution(
         font_size=12,
         fig_size=(8, 5),
         x_label="Molecular weight (g/mol)",
-        y_label="Normalized Response"
+        y_label="Normalized Response",
+        x_label_style="normal",
+        y_label_style="normal"
 ):
     """
     Perform GPC deconvolution to separate overlapping peaks in chromatogram data.
@@ -52,6 +54,8 @@ def run_deconvolution(
     fig_size: Figure size (width, height) in inches
     x_label: Label for x-axis
     y_label: Label for y-axis
+    x_label_style: Style for x-axis label ('normal', 'italic', 'bold', 'bold italic')
+    y_label_style: Style for y-axis label ('normal', 'italic', 'bold', 'bold italic')
 
     Returns:
     fig: The deconvolution plot
@@ -282,8 +286,16 @@ def run_deconvolution(
     ax.set_xscale('log')
     ax.set_xlim(mw_lim)
     ax.set_ylim(y_lim)
-    ax.set_xlabel(x_label, fontstyle='italic', fontweight='demi')
-    ax.set_ylabel(y_label, fontstyle='italic', fontweight='demi')
+
+    # Apply font styles to axis labels
+    font_dict_x = {'fontstyle': 'italic' if 'italic' in x_label_style else 'normal',
+                   'fontweight': 'bold' if 'bold' in x_label_style else 'normal'}
+    font_dict_y = {'fontstyle': 'italic' if 'italic' in y_label_style else 'normal',
+                   'fontweight': 'bold' if 'bold' in y_label_style else 'normal'}
+
+    ax.set_xlabel(x_label, **font_dict_x)
+    ax.set_ylabel(y_label, **font_dict_y)
+
     ax.legend()
     ax.grid(False)
     fig.tight_layout()
