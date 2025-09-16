@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 
-def gpc_deconvolution(
+def run_deconvolution(
         data_array,
         calib_array,
         mw_lim=[1e3, 1e7],
