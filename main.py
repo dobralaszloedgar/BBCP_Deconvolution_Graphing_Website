@@ -30,8 +30,6 @@ with st.expander("Basic Parameters", expanded=st.session_state.expander_basic):
         w_hi = st.number_input("Peak width search: end", 50, 800, 450, step=10)
         baseline_method = st.selectbox("Baseline method", ["flat", "linear", "quadratic"], index=2)
 
-# Advanced Parameters expander
-with st.expander("Advanced Parameters", expanded=st.session_state.expander_advanced):
     # Baseline ranges
     bl_ranges_input = st.text_input("Baseline MW ranges (comma-sep pairs)",
                                     "1e3-1.2e3,14e3-21e3,9.5e6-1e7")
@@ -40,6 +38,9 @@ with st.expander("Advanced Parameters", expanded=st.session_state.expander_advan
     peaks_txt = st.text_input("Manual peaks (comma list, blank=auto)", "")
     peaks_are_mw = st.checkbox("Manual peaks given as MW (unchecked=RT)", True)
 
+
+# Advanced Parameters expander
+with st.expander("Peak Colors and Names", expanded=st.session_state.expander_advanced):
     # Appearance settings
     original_data_color = st.color_picker("Original data color", value="#ef476f")
     original_data_name = st.text_input("Original data label", value="Original Data")
