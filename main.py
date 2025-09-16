@@ -121,7 +121,7 @@ if cal_file and data_file:
         )
 
         # Display results
-        st.pyplot(fig)
+        st.pyplot(fig, dpi=600)
         st.dataframe(table, use_container_width=True)
 
     except Exception as e:
