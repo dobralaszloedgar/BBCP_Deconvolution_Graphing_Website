@@ -104,8 +104,6 @@ with st.expander("Basic Parameters", expanded=st.session_state.expander_basic):
 # Advanced Parameters expander
 with st.expander("Peak Colors And Names", expanded=st.session_state.expander_advanced):
     # Peak names and colors
-    original_data_color = st.color_picker("Original Data Color", value="#ef476f")
-    original_data_name = st.text_input("Original Data Name", value="Original Data")
     st.write("Peak Names And Colors:")
     default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5", "Peak 6", "Peak 7", "Peak 8", "Peak 9",
                      "Peak 10"]
@@ -114,6 +112,12 @@ with st.expander("Peak Colors And Names", expanded=st.session_state.expander_adv
 
     custom_names = []
     custom_colors = []
+
+    cu1, cu2 = st.columns(2)
+    with cu1:
+        original_data_name = st.text_input("Original Data Name", value="Original Data")
+    with cu2:
+        original_data_color = st.color_picker("Original Data Color", value="#ef476f")
 
     for i in range(peaks_n):
         col1, col2 = st.columns(2)
@@ -128,7 +132,6 @@ with st.expander("Peak Colors And Names", expanded=st.session_state.expander_adv
                                     key=f"color_{i}")
             custom_colors.append(color)
 
-    # Moved these to the Peak Colors and Names section as requested
     plot_sum = st.checkbox("Plot Sum Of Gaussians", False)
 
 # Appearance Parameters expander
