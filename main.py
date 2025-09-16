@@ -138,12 +138,21 @@ with st.expander("Peak Colors And Names", expanded=st.session_state.expander_adv
 with st.expander("Appearance Settings", expanded=st.session_state.expander_appearance):
     col1, col2 = st.columns(2)
     with col1:
-        # Font selection
-        common_fonts = ["Arial", "Times New Roman", "Helvetica", "Courier New", "Verdana",
-                        "Georgia", "Palatino", "Garamond", "Comic Sans MS", "Trebuchet MS"]
-        selected_font = st.selectbox("Font Family", common_fonts, index=0)
-        custom_font = st.text_input("Or Enter Custom Font", "")
-        font_family = custom_font if custom_font else selected_font
+        # Font selection - 40 common fonts in alphabetical order
+        common_fonts = [
+            "Arial", "Arial Black", "Arial Narrow", "Arial Rounded MT Bold", "Avant Garde",
+            "Baskerville", "Bell MT", "Bodoni MT", "Book Antiqua", "Bookman Old Style",
+            "Bradley Hand ITC", "Calibri", "Cambria", "Candara", "Century Gothic",
+            "Century Schoolbook", "Comic Sans MS", "Consolas", "Constantia", "Corbel",
+            "Courier New", "DejaVu Sans", "DejaVu Serif", "Didot", "Franklin Gothic Medium",
+            "Futura", "Garamond", "Geneva", "Georgia", "Gill Sans",
+            "Helvetica", "Impact", "Lucida Bright", "Lucida Console", "Lucida Grande",
+            "Lucida Sans Unicode", "Microsoft Sans Serif", "Monaco", "Montserrat", "Myriad Pro",
+            "Optima", "Palatino", "Papyrus", "Rockwell", "Segoe UI",
+            "Tahoma", "Times New Roman", "Trebuchet MS", "Verdana", "Zapf Chancery"
+        ]
+        # Set Times New Roman as default
+        font_family = st.selectbox("Font Family", common_fonts, index=common_fonts.index("Times New Roman"))
 
         font_size = st.number_input("Font Size", 8, 20, 12, step=1)
 

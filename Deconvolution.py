@@ -24,7 +24,7 @@ def run_deconvolution(
         baseline_ranges=[],
         original_data_color='#ef476f',
         original_data_label='Original Data',
-        font_family='sans-serif',
+        font_family='Times New Roman',
         font_size=12,
         fig_size=(8, 5),
         x_label="Molecular weight (g/mol)",
@@ -62,7 +62,7 @@ def run_deconvolution(
     results_df: Results table with peak information
     """
 
-    # Set font properties
+    # Set font properties for the entire figure
     plt.rcParams['font.family'] = font_family
     plt.rcParams['font.size'] = font_size
 
@@ -91,7 +91,7 @@ def run_deconvolution(
 
     # Extract and normalize data
     x_raw = data_array[:, 0].astype(float)
-    y_raw = data_array[:, 1].astype(float)
+    y_raw = data_array[:, 1].ast(float)
     max_y = max_of_y_within_range(x_raw, y_raw, rt_lim[0], rt_lim[1])
     y_raw = y_raw / max_y
 
@@ -296,7 +296,18 @@ def run_deconvolution(
     ax.set_xlabel(x_label, **font_dict_x)
     ax.set_ylabel(y_label, **font_dict_y)
 
-    ax.legend()
+    # Set font for all text elements in the plot
+    for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+                 ax.get_xticklabels() + ax.get_yticklabels()):
+        item.set_fontfamily(font_family)
+        item.set_fontsize(font_size)
+
+    # Set font for legend
+    legend = ax.legend()
+    for text in legend.get_texts():
+        text.set_fontfamily(font_family)
+        text.set_fontsize(font_size)
+
     ax.grid(False)
     fig.tight_layout()
 
