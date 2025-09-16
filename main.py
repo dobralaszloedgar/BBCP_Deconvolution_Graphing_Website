@@ -55,7 +55,7 @@ with st.expander("Peak names and colors (optional)"):
             name = st.text_input(f"Peak {i + 1} name",
                                  value=default_names[i] if i < len(default_names) else f"Peak {i + 1}")
             custom_names.append(name)
-            original_data_color = st.color_picker("Original data color", value="#ef476f")
+            original_data_color = st.color_picker("Original data color", value="#ef476f", key="og")
             original_data_name = st.text_input("Original data label", value="Original Data")
         with col2:
             color = st.color_picker(f"Peak {i + 1} color",
