@@ -6,13 +6,6 @@ Run with:
     streamlit run main.py
 """
 
-import streamlit as st
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
-from scipy.signal import find_peaks
-from scipy.integrate import trapezoid
-from scipy.interpolate import interp1d
 from Deconvolution import *
 
 
