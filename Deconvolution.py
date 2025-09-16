@@ -295,7 +295,7 @@ def run_deconvolution(
             # List of fallback fonts to try in order of preference
             fallback_fonts = [
                 "Times New Roman", "DejaVu Serif", "Liberation Serif",
-                "Arial", "Helvetica", "DejaVu Sans", "sans-serif"
+                "Arial", "Helvetica", "sans-serif"
             ]
 
             for fallback in fallback_fonts:
