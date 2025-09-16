@@ -1,13 +1,64 @@
+# main.py
 from Deconvolution import *
 import streamlit as st
 import numpy as np
+import requests
+import tempfile
+import os
 
 # -------------------- Streamlit user interface ----------------------
 st.title("BBCP Deconvolution")
 
-# File uploaders
-cal_file = st.file_uploader("Calibration curve (.txt)", type="txt")
-data_file = st.file_uploader("Chromatogram data (.txt)", type="txt")
+# Default file URLs (replace with your actual GitHub raw file URLs)
+DEFAULT_CAL_URL = "https://raw.githubusercontent.com/yourusername/yourrepo/main/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
+DEFAULT_DATA_URL = "https://raw.githubusercontent.com/yourusername/yourrepo/main/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
+
+
+# Function to download default files
+def download_default_file(url, filename):
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+
+        # Create a temporary file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+        temp_file.write(response.content)
+        temp_file.close()
+
+        return temp_file.name
+    except Exception as e:
+        st.error(f"Error downloading default file: {str(e)}")
+        return None
+
+
+# Radio button to choose between default files or custom upload
+data_source = st.radio("Select data source:",
+                       ["Use example data", "Upload my own data"])
+
+cal_file = None
+data_file = None
+
+if data_source == "Use example data":
+    st.info("Using example data to demonstrate the deconvolution process.")
+
+    # Download default files
+    with st.spinner("Loading example data..."):
+        cal_path = download_default_file(DEFAULT_CAL_URL, "default_cal.txt")
+        data_path = download_default_file(DEFAULT_DATA_URL, "default_data.txt")
+
+    if cal_path and data_path:
+        # Create file-like objects from the downloaded files
+        cal_file = open(cal_path, 'r')
+        data_file = open(data_path, 'r')
+
+        # Display information about the example data
+        st.success("Example data loaded successfully!")
+        st.write("**Calibration curve:** RI Calibration Curve 2024 September.txt")
+        st.write("**Chromatogram data:** 11.15.2024_GB_GRAFT_PS-b-2PLA.txt")
+else:
+    # File uploaders for custom data
+    cal_file = st.file_uploader("Calibration curve (.txt)", type="txt")
+    data_file = st.file_uploader("Chromatogram data (.txt)", type="txt")
 
 # Initialize session state for expanders
 if 'expander_basic' not in st.session_state:
@@ -66,6 +117,7 @@ with st.expander("Peak Colors and Names", expanded=st.session_state.expander_adv
                                     key=f"color_{i}")
             custom_colors.append(color)
 
+
 # Parse baseline ranges string
 def parse_ranges(txt):
     rngs = []
@@ -79,7 +131,8 @@ def parse_ranges(txt):
             st.warning(f"Invalid range format: {seg}. Skipping.")
     return rngs
 
-# Process files if uploaded
+
+# Process files if available
 if cal_file and data_file:
     try:
         # Parse baseline ranges
@@ -124,5 +177,14 @@ if cal_file and data_file:
     except Exception as e:
         st.error(f"Error processing files: {str(e)}")
         st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
+
+    # Clean up temporary files if we used example data
+    if data_source == "Use example data":
+        try:
+            os.unlink(cal_file.name)
+            os.unlink(data_file.name)
+        except:
+            pass
 else:
-    st.info("Upload both calibration and data files to begin.")
+    if data_source == "Upload my own data":
+        st.info("Upload both calibration and data files to begin.")
