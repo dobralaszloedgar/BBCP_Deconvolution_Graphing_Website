@@ -1,190 +1,160 @@
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks
 from scipy.integrate import trapezoid
 from scipy.interpolate import interp1d
 import pandas as pd
-import streamlit as st
 
 
 def run_deconvolution(
         data_array,
         calib_array,
-        mw_lim,
-        y_lim,
-        n_peaks,
-        plot_sum,
-        manual_peaks,
-        peaks_are_mw,
-        peak_names,
-        peak_width_range,
-        baseline_method,
-        baseline_ranges
-):
+        mw_lim=(1e3,1e7),
+        y_lim=(-0.02,1),
+        n_peaks=4,
+        plot_sum=False,
+        manual_peaks=None,
+        peaks_are_mw=True,
+        peak_names=None,
+        peak_width_range=(100,450),
+        baseline_method="quadratic",
+        baseline_ranges=None
+    ):
     """
-    Perform GPC chromatogram deconvolution with Gaussian peak fitting.
+    Perform Gaussian deconvolution of a GPC trace.
 
-    Parameters:
-    data_array: np.array - Chromatogram data [retention_time, response]
-    calib_array: np.array - Calibration data [retention_time, log10(MW)]
-    mw_lim: list - Molecular weight limits [min, max]
-    y_lim: list - Y-axis limits [min, max]
-    n_peaks: int - Number of peaks to fit
-    plot_sum: bool - Whether to plot sum of fitted peaks
-    manual_peaks: list - Manual peak positions (MW or RT)
-    peaks_are_mw: bool - True if manual peaks are MW values
-    peak_names: list - Names for each peak
-    peak_width_range: list - [min, max] width range for peak fitting
-    baseline_method: str - 'flat', 'linear', or 'quadratic'
-    baseline_ranges: list - MW ranges for baseline correction
+    Parameters
+    ----------
+    data_array : ndarray
+        Two-column chromatogram [RT, response].
+    calib_array : ndarray
+        Two-column calibration [RT, log10(MW)].
+    mw_lim : tuple
+        Molecular weight limits (min, max).
+    y_lim : tuple
+        y-axis limits for plotting.
+    n_peaks : int
+        Number of peaks to detect (ignored if manual_peaks provided).
+    plot_sum : bool
+        If True, overlay sum of fitted Gaussians.
+    manual_peaks : list or None
+        User-provided peaks (MW or RT, depending on peaks_are_mw).
+    peaks_are_mw : bool
+        If True, manual_peaks are MW; else retention time.
+    peak_names : list or None
+        Names for peaks.
+    peak_width_range : tuple
+        Range (lo,hi) of fitting window widths to try.
+    baseline_method : str
+        'flat', 'linear', 'quadratic'.
+    baseline_ranges : list
+        List of [MW_min, MW_max] ranges for baseline calculation.
 
-    Returns:
-    fig: matplotlib.figure.Figure - Deconvolution plot
-    results_df: pd.DataFrame - Peak analysis results
+    Returns
+    -------
+    fig : matplotlib Figure
+    results_df : pandas DataFrame
+        Table of peak Mn and area %.
     """
 
-    # 1. Build calibration interpolators
-    rt_cal, logmw_cal = calib_array[:, 0], calib_array[:, 1]
-    f_logmw = interp1d(rt_cal, logmw_cal, kind='linear', fill_value='extrapolate')
-    f_rt = interp1d(logmw_cal, rt_cal, kind='linear', fill_value='extrapolate')
+    # --- 1. calibration
+    rt_cal, logmw_cal = calib_array[:,0], calib_array[:,1]
+    f_logmw = interp1d(rt_cal, logmw_cal, kind="linear", fill_value="extrapolate")
+    f_rt    = interp1d(logmw_cal, rt_cal, kind="linear", fill_value="extrapolate")
+    mw2rt   = lambda mw: f_rt(np.log10(mw))
 
-    def mw_to_rt(mw):
-        return f_rt(np.log10(mw))
+    # --- 2. retention time window
+    rt_min, rt_max = mw2rt(mw_lim[1]), mw2rt(mw_lim[0])  # hi MW → low RT
+    mask_window = (data_array[:,0]>=rt_min) & (data_array[:,0]<=rt_max)
 
-    # 2. Convert MW limits to RT limits
-    rt_min = mw_to_rt(mw_lim[1])
-    rt_max = mw_to_rt(mw_lim[0])
-    rt_lim = [rt_min, rt_max]
+    # --- 3. extract + normalize
+    x_rt = data_array[:,0].astype(float)
+    y_raw = data_array[:,1].astype(float)
+    y_norm = y_raw / y_raw[mask_window].max()
 
-    # 3. Extract and normalize chromatogram data
-    x_rt = data_array[:, 0].astype(float)
-    y_raw = data_array[:, 1].astype(float)
+    # --- 4. baseline correction
+    def baseline_correction(x_rt_in,y_in,x_mw_in):
+        n_required = dict(flat=1,linear=2,quadratic=3)[baseline_method]
+        if baseline_ranges is None or len(baseline_ranges)!=n_required:
+            raise ValueError(f"{baseline_method} requires {n_required} baseline ranges")
+        refs=[]
+        for rng in baseline_ranges:
+            m=(x_mw_in>=rng[0])&(x_mw_in<=rng[1])
+            if not np.any(m):
+                raise ValueError(f"No points in baseline MW range {rng}")
+            refs.append((x_rt_in[m].mean(),y_in[m].mean()))
+        xs,ys=zip(*refs)
+        deg=dict(flat=0,linear=1,quadratic=2)[baseline_method]
+        coeffs=np.polyfit(xs,ys,deg)
+        baseline=np.polyval(coeffs,x_rt_in)
+        return y_in-baseline, baseline
 
-    # Normalize within RT window
-    mask = (x_rt >= rt_lim[0]) & (x_rt <= rt_lim[1])
-    y_norm = y_raw / np.max(y_raw[mask]) if np.any(mask) else y_raw
+    x_mw=10**f_logmw(x_rt)
+    y_corr, baseline=baseline_correction(x_rt,y_norm,x_mw)
 
-    # 4. Baseline correction
-    x_mw = 10 ** f_logmw(x_rt)  # Convert RT to MW for baseline ranges
-
-    def correct_baseline(x_rt, y, x_mw):
-        ref_points = []
-        required_ranges = {'flat': 1, 'linear': 2, 'quadratic': 3}[baseline_method]
-
-        if len(baseline_ranges) != required_ranges:
-            raise ValueError(f"{baseline_method} baseline requires {required_ranges} ranges")
-
-        for bl_range in baseline_ranges:
-            mask = (x_mw >= bl_range[0]) & (x_mw <= bl_range[1])
-            if np.any(mask):
-                ref_points.append((np.mean(x_rt[mask]), np.mean(y[mask])))
-
-        x_ref, y_ref = zip(*ref_points)
-        degree = {'flat': 0, 'linear': 1, 'quadratic': 2}[baseline_method]
-        coeffs = np.polyfit(x_ref, y_ref, degree)
-        baseline = np.polyval(coeffs, x_rt)
-        return y - baseline, baseline
-
-    y_corrected, baseline = correct_baseline(x_rt, y_norm, x_mw)
-
-    # 5. Peak detection
+    # --- 5. peak detection
     if manual_peaks:
-        x_peaks_rt = [mw_to_rt(p) if peaks_are_mw else p for p in manual_peaks]
-        n_peaks = len(x_peaks_rt)
+        x_peaks_rt=[]
+        for pk in manual_peaks:
+            rt_est=mw2rt(pk) if peaks_are_mw else pk
+            x_peaks_rt.append(rt_est)
+        n_peaks=len(x_peaks_rt)
     else:
-        indices, _ = find_peaks(y_corrected, distance=200, width=50)
-        peak_heights = y_corrected[indices]
-        if len(peak_heights) >= n_peaks:
-            top_indices = np.argsort(peak_heights)[-n_peaks:][::-1]
-            x_peaks_rt = x_rt[indices[top_indices]]
-        else:
-            x_peaks_rt = x_rt[indices]
-            n_peaks = len(x_peaks_rt)
+        idx,_=find_peaks(y_corr,distance=200,width=50)
+        if len(idx)<n_peaks:
+            n_peaks=len(idx)
+        idx=idx[np.argsort(y_corr[idx])[-n_peaks:]]
+        x_peaks_rt=x_rt[idx]
 
-    # 6. Gaussian fitting
-    def gaussian(x, amp, mu, sigma):
-        return amp * np.exp(-(x - mu) ** 2 / (2 * sigma ** 2))
+    # --- 6. Gaussian fitting
+    def gaussian(x,a,mu,s): return a*np.exp(-(x-mu)**2/(2*s**2))
 
-    best_fit = None
-    best_params = None
-    best_residual = np.inf
-
-    for width in range(peak_width_range[0], peak_width_range[1]):
-        y_temp = y_corrected.copy()
-        gaussians = []
-        params_list = []
-
+    best_resid=np.inf
+    best_gaussians,best_params=None,None
+    for width in range(peak_width_range[0],peak_width_range[1]):
+        y_left=y_corr.copy()
+        gaussians,params=[],[]
         try:
-            for peak_rt in x_peaks_rt:
-                idx = np.argmin(np.abs(x_rt - peak_rt))
-                start = max(0, idx - width)
-                end = min(len(x_rt), idx + width)
+            for mu_guess in x_peaks_rt:
+                i0=np.argmin(np.abs(x_rt-mu_guess))
+                lo,hi=max(0,i0-width),min(len(x_rt),i0+width)
+                p0=[y_left[i0], mu_guess, 0.1]
+                popt,_=curve_fit(gaussian,x_rt[lo:hi],y_left[lo:hi],p0=p0)
+                g=gaussian(x_rt,*popt)
+                gaussians.append(g); params.append(popt)
+                y_left-=g
+            resid=np.abs(y_left).sum()
+            if resid<best_resid:
+                best_resid,resid; best_gaussians, best_params = resid,params,gaussians
+        except Exception: continue
 
-                p0 = [y_temp[idx], peak_rt, 0.1]
-                params, _ = curve_fit(gaussian, x_rt[start:end], y_temp[start:end], p0=p0)
+    if not best_params:
+        raise RuntimeError("Peak fitting failed")
 
-                fit_curve = gaussian(x_rt, *params)
-                gaussians.append(fit_curve)
-                params_list.append(params)
+    mus=[p[1] for p in best_params]
+    mw_vals=10**f_logmw(mus)
+    areas=[trapezoid(g,x_rt) for g in best_gaussians]
+    pct=np.array(areas)/sum(areas)*100
 
-                y_temp -= fit_curve
+    order=np.argsort(mw_vals)[::-1]
+    mw_vals,pct=np.array(mw_vals)[order],pct[order]
+    best_gaussians=np.array(best_gaussians)[order]
 
-            residual = np.sum(np.abs(y_temp))
-            if residual < best_residual:
-                best_residual = residual
-                best_fit = gaussians
-                best_params = params_list
-        except RuntimeError:
-            continue
+    if peak_names is None: peak_names=[]
+    peak_names=(peak_names+[f"Peak {i+1}" for i in range(len(mw_vals))])[:len(mw_vals)]
 
-    if best_params is None:
-        raise RuntimeError("Peak fitting failed for all width attempts")
-
-    # 7. Calculate results
-    mus = [p[1] for p in best_params]
-    mw_values = 10 ** f_logmw(np.array(mus))
-
-    areas = [trapezoid(g, x_rt) for g in best_fit]
-    total_area = sum(areas)
-    area_percentages = [(area / total_area) * 100 for area in areas]
-
-    # Sort by molecular weight (descending)
-    sort_indices = np.argsort(mw_values)[::-1]
-    mw_values = mw_values[sort_indices]
-    area_percentages = np.array(area_percentages)[sort_indices]
-    best_fit = np.array(best_fit)[sort_indices]
-
-    # Prepare peak names
-    peak_names = (peak_names + [f"Peak {i + 1}" for i in range(len(mw_values))])[:len(mw_values)]
-
-    # 8. Create plot
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(x_mw, y_corrected, color='#ef476f', linewidth=2, label='Baseline-corrected')
-
-    colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c']
-    for i, (fit, pct) in enumerate(zip(best_fit, area_percentages)):
-        ax.plot(x_mw, fit, color=colors[i % len(colors)],
-                label=f'{peak_names[i]}: {pct:.1f}%')
-
+    # --- 7. plot
+    fig,ax=plt.subplots(figsize=(8,5))
+    ax.plot(x_mw,y_corr,color="#ef476f",lw=2,label="Trace (baseline corr.)")
+    colors=['#FFbf00','#06d6a0','#118ab2','#073b4c']
+    for i,(g,pc) in enumerate(zip(best_gaussians,pct)):
+        ax.plot(x_mw,g,color=colors[i%len(colors)],label=f"{peak_names[i]}: {pc:.1f}%")
     if plot_sum:
-        sum_fit = np.sum(best_fit, axis=0)
-        ax.plot(x_mw, sum_fit, '--', color='black', linewidth=1.5, label='Sum of Gaussians')
+        ax.plot(x_mw,best_gaussians.sum(axis=0),'k--',lw=1.2,label="Sum")
+    ax.set(xscale="log",xlim=mw_lim,ylim=y_lim,
+           xlabel="Molecular weight (g/mol)",ylabel="Normalized Response")
+    ax.legend(); ax.grid(False); fig.tight_layout()
 
-    ax.set_xscale('log')
-    ax.set_xlim(mw_lim)
-    ax.set_ylim(y_lim)
-    ax.set_xlabel("Molecular weight (g/mol)")
-    ax.set_ylabel("Normalized Response")
-    ax.legend()
-    ax.grid(False)
-    fig.tight_layout()
-
-    # 9. Create results table
-    results_df = pd.DataFrame({
-        'Peak': peak_names,
-        'Mn (g/mol)': mw_values.astype(int),
-        'Area %': np.round(area_percentages, 1)
-    })
-
-    return fig, results_df
+    results=pd.DataFrame({"Peak":peak_names,"Mn (g/mol)":mw_vals.astype(int),"Area %":pct.round(1)})
+    return fig, results
