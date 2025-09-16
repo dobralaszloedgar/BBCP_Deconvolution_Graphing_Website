@@ -22,7 +22,9 @@ def run_deconvolution(
         peak_colors=['#FFbf00', '#06d6a0', '#118ab2', '#073b4c'],
         peak_width_range=[100, 450],
         baseline_method='quadratic',
-        baseline_ranges=[[1e3, 1.2e3], [14e3, 21e3], [9.5e6, 1e7]]
+        baseline_ranges=[[1e3, 1.2e3], [14e3, 21e3], [9.5e6, 1e7]],
+        original_data_color='#ef476f',
+        original_data_label='Original Data'
 ):
     """
     Perform GPC deconvolution following the exact logic of the original code.
@@ -258,7 +260,7 @@ def run_deconvolution(
     fig, ax = plt.subplots(figsize=(8, 5))
 
     # Plot original data
-    ax.plot(x_mw, y_corrected, label='Original Data', linewidth=2, color='#ef476f')
+    ax.plot(x_mw, y_corrected, label=original_data_label, linewidth=2, color=original_data_color)
 
     # Plot fitted peaks
     if best_fit is not None and len(best_fit) > 0:

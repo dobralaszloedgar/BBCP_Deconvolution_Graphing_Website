@@ -55,6 +55,8 @@ with st.expander("Peak names and colors (optional)"):
             name = st.text_input(f"Peak {i + 1} name",
                                  value=default_names[i] if i < len(default_names) else f"Peak {i + 1}")
             custom_names.append(name)
+            original_data_color = st.color_picker("Original data color", value="#ef476f")
+            original_data_name = st.text_input("Original data label", value="Original Data")
         with col2:
             color = st.color_picker(f"Peak {i + 1} color",
                                     value=default_colors[i] if i < len(default_colors) else '#000000')
@@ -78,7 +80,9 @@ if cal_file and data_file:
         peak_colors=custom_colors,
         peak_width_range=[int(w_lo), int(w_hi)],
         baseline_method=baseline_method,
-        baseline_ranges=baseline_ranges
+        baseline_ranges=baseline_ranges,
+        original_data_color=original_data_color,
+        original_data_label=original_data_name
     )
     st.pyplot(fig)
     st.dataframe(table, use_container_width=True)
