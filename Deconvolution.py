@@ -7,6 +7,35 @@ from scipy.interpolate import interp1d
 import pandas as pd
 import streamlit as st
 import matplotlib.font_manager as fm
+import os
+
+
+# Add this function at the top of the file to set up custom fonts
+def setup_custom_fonts():
+    """Add custom fonts from the fonts directory to matplotlib's font manager"""
+    try:
+        # Get the directory where this script is located
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        fonts_dir = os.path.join(script_dir, 'fonts')
+
+        # Check if fonts directory exists
+        if os.path.exists(fonts_dir):
+            # Add all fonts in the fonts directory
+            font_files = fm.findSystemFonts(fontpaths=[fonts_dir])
+            for font_file in font_files:
+                fm.fontManager.addfont(font_file)
+
+            # Rebuild the font cache
+            fm._rebuild()
+            return True
+        return False
+    except Exception as e:
+        st.warning(f"Could not set up custom fonts: {str(e)}")
+        return False
+
+
+# Call this function to set up custom fonts
+setup_custom_fonts()
 
 
 def run_deconvolution(
@@ -61,7 +90,7 @@ def run_deconvolution(
 
     # Extract and normalize data
     x_raw = data_array[:, 0].astype(float)
-    y_raw = data_array[:, 1].astype(float)
+    y_raw = data_array[:, 1].ast(float)
     max_y = max_of_y_within_range(x_raw, y_raw, rt_lim[0], rt_lim[1])
     y_raw = y_raw / max_y
 
@@ -74,7 +103,6 @@ def run_deconvolution(
     x_mw = 10 ** f_log_mw(x_rt)
 
     # Baseline correction function
-
     def baseline_correction(x_rt, y, x_mw, method='None'):
         if method == 'None':
             # No baseline correction
@@ -236,12 +264,8 @@ def run_deconvolution(
             peak_colors.append(default_colors[len(peak_colors) % len(default_colors)])
         peak_colors = peak_colors[:len(best_fit)]
 
-    # Create the plot with specific font settings
+    # Create the plot
     fig, ax = plt.subplots(figsize=fig_size)
-
-    # Set font properties
-    plt.rcParams['font.family'] = font_family
-    plt.rcParams['font.size'] = font_size
 
     # Plot original data
     ax.plot(x_mw, y_corrected, label=original_data_label, linewidth=2, color=original_data_color)
@@ -262,36 +286,39 @@ def run_deconvolution(
     ax.set_xlim(mw_lim)
     ax.set_ylim(y_lim)
 
-    # Create font properties
+    # Font handling with fallback
     try:
-        font_prop = fm.FontProperties(family=font_family, size=font_size)
+        # Check if the selected font exists
+        available_fonts = [f.name for f in fm.fontManager.ttflist]
+        if font_family not in available_fonts:
+            # Fall back to a default font that should be available
+            font_family = "DejaVu Sans"
+            st.warning(f"Font '{font_family}' not available. Using fallback font.")
 
-        # Apply font to labels with style
-        font_dict_x = {
-            'fontproperties': font_prop,
-            'fontstyle': 'italic' if 'italic' in x_label_style else 'normal',
-            'fontweight': 'bold' if 'bold' in x_label_style else 'normal'
-        }
-        font_dict_y = {
-            'fontproperties': font_prop,
-            'fontstyle': 'italic' if 'italic' in y_label_style else 'normal',
-            'fontweight': 'bold' if 'bold' in y_label_style else 'normal'
-        }
+        # Create font properties
+        font_prop = fm.FontProperties(
+            family=font_family,
+            size=font_size,
+            style='italic' if 'italic' in x_label_style else 'normal',
+            weight='bold' if 'bold' in x_label_style else 'normal'
+        )
 
-        ax.set_xlabel(x_label, **font_dict_x)
-        ax.set_ylabel(y_label, **font_dict_y)
+        # Apply to labels
+        ax.set_xlabel(x_label, fontproperties=font_prop)
+        ax.set_ylabel(y_label, fontproperties=font_prop)
 
-        # Apply font to all text elements
+        # Apply to ticks and other text elements
         for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
                      ax.get_xticklabels() + ax.get_yticklabels()):
             item.set_fontproperties(font_prop)
 
-        # Set font for legend
+        # Apply to legend
         if ax.get_legend():
-            legend = ax.legend(prop=font_prop)
+            for text in ax.get_legend().get_texts():
+                text.set_fontproperties(font_prop)
 
     except Exception as e:
-        st.warning(f"Font setting issue: {str(e)}. Using default font.")
+        st.warning(f"Could not set custom font: {str(e)}")
 
     ax.grid(False)
     fig.tight_layout()
