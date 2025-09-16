@@ -16,7 +16,7 @@ with st.expander("Tunable parameters"):
         mw_max   = st.number_input("MW upper bound", 1e3, 1e9, 1e7, step=1e6, format="%e")
         y_low    = st.number_input("Y-axis lower", -1.0, 0.99, -0.02, step=0.01)
         y_high   = st.number_input("Y-axis upper", 0.1, 5.0, 1.0, step=0.1)
-        n_peaks  = st.slider("Number of peaks",1,6,4)
+        peaks_n  = st.slider("Number of peaks",1,6,4)
         plot_sum = st.checkbox("Plot sum of Gaussians",False)
     with col2:
         w_lo  = st.number_input("Peak width search: start", 20,800,100,step=10)
@@ -47,7 +47,7 @@ if cal_file and data_file:
         calib_array=calib,
         mw_lim=[mw_min,mw_max],
         y_lim=[y_low,y_high],
-        n_peaks=n_peaks,
+        n_peaks=peaks_n,
         plot_sum=plot_sum,
         manual_peaks=manual_peaks,
         peaks_are_mw=peaks_are_mw,
