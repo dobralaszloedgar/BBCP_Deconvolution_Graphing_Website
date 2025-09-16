@@ -6,7 +6,7 @@ import tempfile
 import os
 
 # -------------------- Streamlit user interface ----------------------
-st.title("BBCP Deconvolution")
+st.title("Gaussian Deconvolution")
 
 # Default file URLs
 DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
