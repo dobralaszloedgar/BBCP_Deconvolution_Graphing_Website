@@ -160,6 +160,10 @@ with st.expander("Appearance Settings", expanded=st.session_state.expander_appea
         y_label = st.text_input("Y-Axis Label", "Normalized Response")
         y_label_style = st.selectbox("Y-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
 
+        # Add legend style control
+        legend_style = st.selectbox("Legend Style", ["normal", "italic", "bold", "bold italic"], index=0)
+
+
 # Parse baseline ranges string - handle both single values and ranges
 def parse_ranges(inputs):
     rngs = []
@@ -226,7 +230,8 @@ if cal_file and data_file:
             x_label=x_label,
             y_label=y_label,
             x_label_style=x_label_style,
-            y_label_style=y_label_style
+            y_label_style=y_label_style,
+            legend_style=legend_style
         )
 
         # Display results

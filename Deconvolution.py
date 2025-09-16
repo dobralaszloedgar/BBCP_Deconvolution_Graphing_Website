@@ -59,7 +59,8 @@ def run_deconvolution(
         x_label="Molecular weight (g/mol)",
         y_label="Normalized Response",
         x_label_style="normal",
-        y_label_style="normal"
+        y_label_style="normal",
+        legend_style="normal"
 ):
     # Reset matplotlib to default settings to ensure clean state
     plt.rcdefaults()
@@ -307,29 +308,49 @@ def run_deconvolution(
                 # If no fallback found, use the first available font
                 font_family = available_fonts[0] if available_fonts else "sans-serif"
 
-        # Create font properties
-        font_prop = fm.FontProperties(
+        # Create separate font properties for x-label, y-label, and legend
+        font_prop_x = fm.FontProperties(
             family=font_family,
             size=font_size,
             style='italic' if 'italic' in x_label_style else 'normal',
             weight='bold' if 'bold' in x_label_style else 'normal'
         )
 
-        # Apply to labels
-        ax.set_xlabel(x_label, fontproperties=font_prop)
-        ax.set_ylabel(y_label, fontproperties=font_prop)
+        font_prop_y = fm.FontProperties(
+            family=font_family,
+            size=font_size,
+            style='italic' if 'italic' in y_label_style else 'normal',
+            weight='bold' if 'bold' in y_label_style else 'normal'
+        )
 
-        # Apply to ticks and other text elements
-        for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
-                     ax.get_xticklabels() + ax.get_yticklabels()):
-            item.set_fontproperties(font_prop)
+        font_prop_legend = fm.FontProperties(
+            family=font_family,
+            size=font_size,
+            style='italic' if 'italic' in legend_style else 'normal',
+            weight='bold' if 'bold' in legend_style else 'normal'
+        )
+
+        # Apply to labels with their respective styles
+        ax.set_xlabel(x_label, fontproperties=font_prop_x)
+        ax.set_ylabel(y_label, fontproperties=font_prop_y)
+
+        # Apply to ticks and other text elements (use normal style for ticks)
+        font_prop_ticks = fm.FontProperties(
+            family=font_family,
+            size=font_size,
+            style='normal',
+            weight='normal'
+        )
+
+        for item in (ax.get_xticklabels() + ax.get_yticklabels()):
+            item.set_fontproperties(font_prop_ticks)
 
         # Set font for legend
         if ax.get_legend():
-            legend = ax.legend(prop=font_prop)
+            legend = ax.legend(prop=font_prop_legend)
         else:
             # Create legend if it doesn't exist
-            ax.legend(prop=font_prop)
+            ax.legend(prop=font_prop_legend)
 
     except Exception as e:
         st.warning(f"Could not set custom font: {str(e)}")
@@ -338,6 +359,7 @@ def run_deconvolution(
         ax.set_ylabel(y_label)
         if ax.get_legend():
             ax.legend()
+
 
     ax.grid(False)
     fig.tight_layout()
