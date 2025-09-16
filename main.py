@@ -77,7 +77,7 @@ with st.expander("Basic Parameters", expanded=st.session_state.expander_basic):
     with col2:
         peaks_n = st.slider("Number Of Peaks", 1, 10, 4)
         w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10)
-        w_hi = st.number_input("Peak Width Search: End", 50, 800, 450, step=10)
+        w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10)
         baseline_method = st.selectbox("Baseline Correction Method", ["None", "flat", "linear", "quadratic"], index=0)
 
     # Baseline ranges - show only if not "None"

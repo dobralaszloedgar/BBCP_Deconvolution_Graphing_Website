@@ -20,7 +20,7 @@ def run_deconvolution(
         peaks_are_mw=True,
         peak_names=["Peak 1", "Peak 2", "Peak 3", "Peak 4"],
         peak_colors=['#FFbf00', '#06d6a0', '#118ab2', '#073b4c'],
-        peak_width_range=[100, 450],
+        peak_width_range=[100, 400],
         baseline_method='None',
         baseline_ranges=[],
         original_data_color='#ef476f',
