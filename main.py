@@ -98,7 +98,7 @@ with st.expander("Peak Colors and Names", expanded=st.session_state.expander_adv
 
     # Peak names and colors
     st.write("Peak Names and Colors:")
-    default_names = ["PS-b-2PLA-b-PS", "PS-b-2PLA", "PS-b", "PS", "Peak 5", "Peak 6"]
+    default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5", "Peak 6"]
     default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c', '#a83232', '#a832a8']
 
     custom_names = []
