@@ -6,6 +6,7 @@ from scipy.integrate import trapezoid
 from scipy.interpolate import interp1d
 import pandas as pd
 import streamlit as st
+import matplotlib.font_manager as fm
 
 
 def run_deconvolution(
@@ -261,35 +262,36 @@ def run_deconvolution(
     ax.set_xlim(mw_lim)
     ax.set_ylim(y_lim)
 
-    # Apply font styles to axis labels
-    font_dict_x = {
-        'fontstyle': 'italic' if 'italic' in x_label_style else 'normal',
-        'fontweight': 'bold' if 'bold' in x_label_style else 'normal',
-        'fontfamily': font_family,
-        'fontsize': font_size
-    }
-    font_dict_y = {
-        'fontstyle': 'italic' if 'italic' in y_label_style else 'normal',
-        'fontweight': 'bold' if 'bold' in y_label_style else 'normal',
-        'fontfamily': font_family,
-        'fontsize': font_size
-    }
+    # Create font properties
+    try:
+        font_prop = fm.FontProperties(family=font_family, size=font_size)
 
-    ax.set_xlabel(x_label, **font_dict_x)
-    ax.set_ylabel(y_label, **font_dict_y)
+        # Apply font to labels with style
+        font_dict_x = {
+            'fontproperties': font_prop,
+            'fontstyle': 'italic' if 'italic' in x_label_style else 'normal',
+            'fontweight': 'bold' if 'bold' in x_label_style else 'normal'
+        }
+        font_dict_y = {
+            'fontproperties': font_prop,
+            'fontstyle': 'italic' if 'italic' in y_label_style else 'normal',
+            'fontweight': 'bold' if 'bold' in y_label_style else 'normal'
+        }
 
-    # Set font for all text elements in the plot
-    for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
-                 ax.get_xticklabels() + ax.get_yticklabels()):
-        item.set_fontfamily(font_family)
-        item.set_fontsize(font_size)
+        ax.set_xlabel(x_label, **font_dict_x)
+        ax.set_ylabel(y_label, **font_dict_y)
 
-    # Set font for legend
-    if ax.get_legend():
-        legend = ax.legend()
-        for text in legend.get_texts():
-            text.set_fontfamily(font_family)
-            text.set_fontsize(font_size)
+        # Apply font to all text elements
+        for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+                     ax.get_xticklabels() + ax.get_yticklabels()):
+            item.set_fontproperties(font_prop)
+
+        # Set font for legend
+        if ax.get_legend():
+            legend = ax.legend(prop=font_prop)
+
+    except Exception as e:
+        st.warning(f"Font setting issue: {str(e)}. Using default font.")
 
     ax.grid(False)
     fig.tight_layout()
