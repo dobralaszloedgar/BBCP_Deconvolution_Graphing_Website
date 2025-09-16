@@ -272,8 +272,9 @@ def run_deconvolution(
     # Plot fitted peaks
     if best_fit is not None and len(best_fit) > 0:
         for i, (fit, pct) in enumerate(zip(best_fit, area_percentages)):
+            # Only show peak name in legend, not percentage
             ax.plot(x_mw, fit, color=peak_colors[i],
-                    label=f'{peak_names[i]}: {pct:.1f}%')
+                    label=peak_names[i])  # Removed the percentage from label
 
         if plot_sum:
             # Plot sum of Gaussians

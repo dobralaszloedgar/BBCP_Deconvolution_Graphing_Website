@@ -136,18 +136,12 @@ with st.expander("Peak Colors And Names", expanded=st.session_state.expander_adv
 with st.expander("Appearance Settings", expanded=st.session_state.expander_appearance):
     col1, col2 = st.columns(2)
     with col1:
-        # Font selection - 40 most common fonts
+        # Font selection - 20 most common fonts
         common_fonts = sorted([
-        "Andale Mono", "Arial", "Arial Black", "Apple Chancery",
-        "Baskerville", "Brush Script MT", "Calibri", "Cambria",
-        "Candara", "Century Gothic", "Comic Sans MS", "Constantia",
-        "Corbel", "Courier New", "Copperplate", "Cursive", "Didot",
-        "Franklin Gothic Medium", "Futura", "Garamond", "Geneva",
-        "Georgia", "Gill Sans", "Helvetica", "Impact", "Lucida Console",
-        "Lucida Sans Unicode", "MS Sans Serif", "MS Serif", "Monaco",
-        "Optima", "Palatino", "Segoe UI", "Symbol", "Tahoma",
-        "Times New Roman", "Trebuchet MS", "Verdana", "Webdings",
-        "Wingdings"
+            "Arial", "Times New Roman", "Helvetica", "Verdana", "Georgia",
+            "Courier New", "Tahoma", "Trebuchet MS", "Palatino", "Garamond",
+            "Comic Sans MS", "Impact", "Lucida Console", "Lucida Sans Unicode",
+            "Calibri", "Cambria", "Candara", "Segoe UI", "Optima", "Futura"
         ])
         # Find the index of Times New Roman in the sorted list
         default_font_index = common_fonts.index("Times New Roman") if "Times New Roman" in common_fonts else 0
