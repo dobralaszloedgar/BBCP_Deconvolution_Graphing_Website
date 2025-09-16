@@ -13,12 +13,12 @@ def run_deconvolution(
         calib_array,
         mw_lim=[1e3, 1e7],
         y_lim=[-0.02, 1],
-        number_of_peaks=4,
-        plot_sum_of_fitted_peaks=False,
-        peaks=[],
+        n_peaks=4,
+        plot_sum=False,
+        manual_peaks=[],
         peaks_are_mw=True,
         peak_names=["PS-b-2PLA-b-PS", "PS-b-2PLA", "PS-b", "PS"],
-        peak_wideness_range=[100, 450],
+        peak_width_range=[100, 450],
         baseline_method='quadratic',
         baseline_ranges=[[1e3, 1.2e3], [14e3, 21e3], [9.5e6, 1e7]]
 ):
@@ -30,12 +30,12 @@ def run_deconvolution(
     calib_array: np.array - Calibration data with retention time and log(MW) columns
     mw_lim: list - Molecular weight limits for analysis [min, max]
     y_lim: list - Y-axis limits for plotting [min, max]
-    number_of_peaks: int - Number of peaks to fit
-    plot_sum_of_fitted_peaks: bool - Whether to plot the sum of fitted peaks
-    peaks: list - Manual peak positions (empty for automatic detection)
+    n_peaks: int - Number of peaks to fit
+    plot_sum: bool - Whether to plot the sum of fitted peaks
+    manual_peaks: list - Manual peak positions (empty for automatic detection)
     peaks_are_mw: bool - True if manual peaks are MW values, False for retention times
     peak_names: list - Names for each peak
-    peak_wideness_range: list - Range of widths to try for peak fitting [min, max]
+    peak_width_range: list - Range of widths to try for peak fitting [min, max]
     baseline_method: str - Method for baseline correction ('flat', 'linear', or 'quadratic')
     baseline_ranges: list - MW ranges for baseline calculation
 
@@ -44,6 +44,13 @@ def run_deconvolution(
     results_df: pd.DataFrame - Results table with peak information
     """
 
+    # Map parameter names to match original code
+    number_of_peaks = n_peaks
+    plot_sum_of_fitted_peaks = plot_sum
+    peaks = manual_peaks
+    peak_wideness_range = peak_width_range
+
+    # The rest of the function remains exactly the same as the original code
     # Create interpolation functions for calibration
     retention_time_calib = calib_array[:, 0].astype(float)
     log_mw_calib = calib_array[:, 1].astype(float)
