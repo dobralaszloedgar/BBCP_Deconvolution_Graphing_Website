@@ -1,3 +1,4 @@
+# Deconvolution.py
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import curve_fit
@@ -18,6 +19,7 @@ def run_deconvolution(
         manual_peaks=[],
         peaks_are_mw=True,
         peak_names=["PS-b-2PLA-b-PS", "PS-b-2PLA", "PS-b", "PS"],
+        peak_colors=['#FFbf00', '#06d6a0', '#118ab2', '#073b4c'],
         peak_width_range=[100, 450],
         baseline_method='quadratic',
         baseline_ranges=[[1e3, 1.2e3], [14e3, 21e3], [9.5e6, 1e7]]
@@ -35,6 +37,7 @@ def run_deconvolution(
     manual_peaks: list - Manual peak positions (empty for automatic detection)
     peaks_are_mw: bool - True if manual peaks are MW values, False for retention times
     peak_names: list - Names for each peak
+    peak_colors: list - Colors for each peak
     peak_width_range: list - Range of widths to try for peak fitting [min, max]
     baseline_method: str - Method for baseline correction ('flat', 'linear', or 'quadratic')
     baseline_ranges: list - MW ranges for baseline calculation
@@ -242,6 +245,15 @@ def run_deconvolution(
         # Trim peak_names if we have fewer peaks than names
         peak_names = peak_names[:len(best_fit)]
 
+        # Ensure we have enough peak colors
+        while len(peak_colors) < len(best_fit):
+            # Add default colors if not enough provided
+            default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c', '#a83232', '#a832a8']
+            peak_colors.append(default_colors[len(peak_colors) % len(default_colors)])
+
+        # Trim peak_colors if we have fewer peaks than colors
+        peak_colors = peak_colors[:len(best_fit)]
+
     # Create the plot
     fig, ax = plt.subplots(figsize=(8, 5))
 
@@ -250,9 +262,8 @@ def run_deconvolution(
 
     # Plot fitted peaks
     if best_fit is not None and len(best_fit) > 0:
-        colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c']
         for i, (fit, pct) in enumerate(zip(best_fit, area_percentages)):
-            ax.plot(x_mw, fit, color=colors[i % len(colors)],
+            ax.plot(x_mw, fit, color=peak_colors[i],
                     label=f'{peak_names[i]}: {pct:.1f}%')
 
         if plot_sum_of_fitted_peaks:
