@@ -12,7 +12,6 @@ st.title("BBCP Deconvolution")
 DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
 DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
 
-
 # Function to download default files
 def download_default_file(url, filename):
     try:
@@ -28,7 +27,6 @@ def download_default_file(url, filename):
     except Exception as e:
         st.error(f"Error downloading default file: {str(e)}")
         return None
-
 
 # Radio button to choose between default files or custom upload
 data_source = st.radio("Select Data Source:",
@@ -138,13 +136,18 @@ with st.expander("Peak Colors And Names", expanded=st.session_state.expander_adv
 with st.expander("Appearance Settings", expanded=st.session_state.expander_appearance):
     col1, col2 = st.columns(2)
     with col1:
-        # Font selection
-        common_fonts = ["Arial", "Times New Roman", "Helvetica", "Courier New", "Verdana",
-                        "Georgia", "Palatino", "Garamond", "Comic Sans MS", "Trebuchet MS"]
-        selected_font = st.selectbox("Font Family", common_fonts, index=0)
-        custom_font = st.text_input("Or Enter Custom Font", "")
-        font_family = custom_font if custom_font else selected_font
-
+        # Font selection - 40 most common fonts
+        common_fonts = [
+            "Times New Roman", "Arial", "Helvetica", "Courier New", "Verdana",
+            "Georgia", "Palatino", "Garamond", "Comic Sans MS", "Trebuchet MS",
+            "Impact", "Arial Black", "Tahoma", "Century Gothic", "Lucida Sans Unicode",
+            "Lucida Console", "MS Sans Serif", "MS Serif", "Symbol", "Webdings",
+            "Wingdings", "Monaco", "Andale Mono", "Apple Chancery", "Brush Script MT",
+            "Copperplate", "Didot", "Futura", "Geneva", "Gill Sans",
+            "Optima", "Baskerville", "Cambria", "Calibri", "Candara",
+            "Constantia", "Corbel", "Franklin Gothic Medium", "Segoe UI", "Cursive"
+        ]
+        font_family = st.selectbox("Font Family", common_fonts, index=0)
         font_size = st.number_input("Font Size", 8, 20, 12, step=1)
 
     with col2:
@@ -158,7 +161,6 @@ with st.expander("Appearance Settings", expanded=st.session_state.expander_appea
 
         y_label = st.text_input("Y-Axis Label", "Normalized Response")
         y_label_style = st.selectbox("Y-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
-
 
 # Parse baseline ranges string - handle both single values and ranges
 def parse_ranges(inputs):
@@ -183,7 +185,6 @@ def parse_ranges(inputs):
             except ValueError:
                 st.warning(f"Invalid value format: {inp}. Skipping.")
     return rngs
-
 
 # Process files if available
 if cal_file and data_file:

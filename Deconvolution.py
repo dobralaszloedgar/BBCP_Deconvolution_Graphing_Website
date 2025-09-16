@@ -32,41 +32,8 @@ def run_deconvolution(
         x_label_style="normal",
         y_label_style="normal"
 ):
-    """
-    Perform GPC deconvolution to separate overlapping peaks in chromatogram data.
-
-
-    Parameters:
-    data_array: GPC data with retention time and response columns
-    calib_array: Calibration data with retention time and log(MW) columns
-    mw_lim: Molecular weight limits for analysis [min, max]
-    y_lim: Y-axis limits for plotting [min, max]
-    n_peaks: Number of peaks to fit
-    plot_sum: Whether to plot the sum of fitted peaks
-    manual_peaks: Manual peak positions (empty for automatic detection)
-    peaks_are_mw: True if manual peaks are MW values, False for retention times
-    peak_names: Names for each peak
-    peak_colors: Colors for each peak
-    peak_width_range: Range of widths to try for peak fitting [min, max]
-    baseline_method: Method for baseline correction ('None', 'flat', 'linear', or 'quadratic')
-    baseline_ranges: MW ranges for baseline calculation
-    font_family: Font family for plot text
-    font_size: Font size for plot text
-    fig_size: Figure size (width, height) in inches
-    x_label: Label for x-axis
-    y_label: Label for y-axis
-    x_label_style: Style for x-axis label ('normal', 'italic', 'bold', 'bold italic')
-    y_label_style: Style for y-axis label ('normal', 'italic', 'bold', 'bold italic')
-
-    Returns:
-    fig: The deconvolution plot
-    results_df: Results table with peak information
-    """
-
-    # Create a fresh figure with specific font settings
-    plt.rcParams.update(plt.rcParamsDefault)  # Reset to defaults
-    plt.rcParams['font.family'] = font_family
-    plt.rcParams['font.size'] = font_size
+    # Reset matplotlib to default settings to ensure clean state
+    plt.rcdefaults()
 
     # Create interpolation functions for calibration data
     retention_time_calib = calib_array[:, 0].astype(float)
@@ -106,6 +73,7 @@ def run_deconvolution(
     x_mw = 10 ** f_log_mw(x_rt)
 
     # Baseline correction function
+
     def baseline_correction(x_rt, y, x_mw, method='None'):
         if method == 'None':
             # No baseline correction
@@ -267,8 +235,12 @@ def run_deconvolution(
             peak_colors.append(default_colors[len(peak_colors) % len(default_colors)])
         peak_colors = peak_colors[:len(best_fit)]
 
-    # Create the plot
+    # Create the plot with specific font settings
     fig, ax = plt.subplots(figsize=fig_size)
+
+    # Set font properties
+    plt.rcParams['font.family'] = font_family
+    plt.rcParams['font.size'] = font_size
 
     # Plot original data
     ax.plot(x_mw, y_corrected, label=original_data_label, linewidth=2, color=original_data_color)
@@ -289,7 +261,7 @@ def run_deconvolution(
     ax.set_xlim(mw_lim)
     ax.set_ylim(y_lim)
 
-    # Apply font styles to axis labels with explicit font family and size
+    # Apply font styles to axis labels
     font_dict_x = {
         'fontstyle': 'italic' if 'italic' in x_label_style else 'normal',
         'fontweight': 'bold' if 'bold' in x_label_style else 'normal',
@@ -306,13 +278,13 @@ def run_deconvolution(
     ax.set_xlabel(x_label, **font_dict_x)
     ax.set_ylabel(y_label, **font_dict_y)
 
-    # Set font for all text elements in the plot with explicit family and size
+    # Set font for all text elements in the plot
     for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
                  ax.get_xticklabels() + ax.get_yticklabels()):
         item.set_fontfamily(font_family)
         item.set_fontsize(font_size)
 
-    # Set font for legend with explicit family and size
+    # Set font for legend
     if ax.get_legend():
         legend = ax.legend()
         for text in legend.get_texts():
