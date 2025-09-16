@@ -90,7 +90,7 @@ def run_deconvolution(
 
     # Extract and normalize data
     x_raw = data_array[:, 0].astype(float)
-    y_raw = data_array[:, 1].ast(float)
+    y_raw = data_array[:, 1].astype(float)
     max_y = max_of_y_within_range(x_raw, y_raw, rt_lim[0], rt_lim[1])
     y_raw = y_raw / max_y
 
