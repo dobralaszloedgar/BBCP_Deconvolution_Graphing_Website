@@ -8,19 +8,8 @@ from scipy.integrate import trapezoid
 from scipy.interpolate import interp1d
 import matplotlib.font_manager
 
-# Website
-sl.title("BBCP Deconvolution V3")
-
-cal_file = sl.file_uploader("Upload Calibration File (.txt)")
-data_file = sl.file_uploader("Upload Data File (.txt)")
-
-if cal_file and data_file:
-    txt_file = data_file
-    RI_calibration = cal_file
-
 # Configuration
-txt_file = data_file
-#txt_file = r"G:\Edgar Dobra\GPC Samples\2024 Fall\11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
+txt_file = r"G:\Edgar Dobra\GPC Samples\2024 Fall\11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
 mw_lim = [1e3, 1e7]  # Molecular weight limits for analysis (g/mol)
 y_lim = [-0.02, 1]
 number_of_peaks = 4
@@ -33,8 +22,7 @@ baseline_method = 'quadratic'  # can change to 'flat' (1 range), 'linear'(2 rang
 baseline_ranges = [[1e3, 1.2e3], [14e3, 21e3], [9.5e6, 1e7]]  # MW ranges for baseline calculation
 
 # Calibration and MW conversion
-RI_calibration = cal_file
-#RI_calibration = r"G:/Edgar Dobra\GPC Samples\Calibration Curves\RI Calibration Curve 2024 September.txt"
+RI_calibration = r"G:/Edgar Dobra\GPC Samples\Calibration Curves\RI Calibration Curve 2024 September.txt"
 mw_x_lim = mw_lim  # Molecular weight limits for plotting
 
 # Font settings

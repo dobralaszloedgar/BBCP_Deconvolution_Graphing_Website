@@ -1,10 +1,3 @@
-# =========================  main.py  =================================
-"""
-Web front-end for GPC trace deconvolution.
-
-Run with:
-    streamlit run main.py
-"""
 
 from Deconvolution import *
 
