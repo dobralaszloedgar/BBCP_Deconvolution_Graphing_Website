@@ -2,7 +2,7 @@ from Deconvolution import *
 import streamlit as st
 import numpy as np
 
-# --------------------  Streamlit user interface  ----------------------
+# -------------------- Streamlit user interface ----------------------
 st.title("BBCP Deconvolution")
 
 # File uploaders
@@ -38,7 +38,6 @@ with st.expander("Basic Parameters", expanded=st.session_state.expander_basic):
     peaks_txt = st.text_input("Manual peaks (comma list, blank=auto)", "")
     peaks_are_mw = st.checkbox("Manual peaks given as MW (unchecked=RT)", True)
 
-
 # Advanced Parameters expander
 with st.expander("Peak Colors and Names", expanded=st.session_state.expander_advanced):
     # Appearance settings
@@ -67,7 +66,6 @@ with st.expander("Peak Colors and Names", expanded=st.session_state.expander_adv
                                     key=f"color_{i}")
             custom_colors.append(color)
 
-
 # Parse baseline ranges string
 def parse_ranges(txt):
     rngs = []
@@ -81,14 +79,13 @@ def parse_ranges(txt):
             st.warning(f"Invalid range format: {seg}. Skipping.")
     return rngs
 
-
 # Process files if uploaded
 if cal_file and data_file:
     try:
         # Parse baseline ranges
         baseline_ranges = parse_ranges(bl_ranges_input)
 
-        # Load data
+        # Load data (assuming tab-separated format with 2 header rows)
         calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2)
         data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
 

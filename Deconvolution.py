@@ -1,4 +1,3 @@
-# Deconvolution.py
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import curve_fit
@@ -27,43 +26,37 @@ def run_deconvolution(
         original_data_label='Original Data'
 ):
     """
-    Perform GPC deconvolution following the exact logic of the original code.
+    Perform GPC deconvolution to separate overlapping peaks in chromatogram data.
 
     Parameters:
-    data_array: np.array - GPC data with retention time and response columns
-    calib_array: np.array - Calibration data with retention time and log(MW) columns
-    mw_lim: list - Molecular weight limits for analysis [min, max]
-    y_lim: list - Y-axis limits for plotting [min, max]
-    n_peaks: int - Number of peaks to fit
-    plot_sum: bool - Whether to plot the sum of fitted peaks
-    manual_peaks: list - Manual peak positions (empty for automatic detection)
-    peaks_are_mw: bool - True if manual peaks are MW values, False for retention times
-    peak_names: list - Names for each peak
-    peak_colors: list - Colors for each peak
-    peak_width_range: list - Range of widths to try for peak fitting [min, max]
-    baseline_method: str - Method for baseline correction ('flat', 'linear', or 'quadratic')
-    baseline_ranges: list - MW ranges for baseline calculation
+    data_array: GPC data with retention time and response columns
+    calib_array: Calibration data with retention time and log(MW) columns
+    mw_lim: Molecular weight limits for analysis [min, max]
+    y_lim: Y-axis limits for plotting [min, max]
+    n_peaks: Number of peaks to fit
+    plot_sum: Whether to plot the sum of fitted peaks
+    manual_peaks: Manual peak positions (empty for automatic detection)
+    peaks_are_mw: True if manual peaks are MW values, False for retention times
+    peak_names: Names for each peak
+    peak_colors: Colors for each peak
+    peak_width_range: Range of widths to try for peak fitting [min, max]
+    baseline_method: Method for baseline correction ('flat', 'linear', or 'quadratic')
+    baseline_ranges: MW ranges for baseline calculation
 
     Returns:
-    fig: matplotlib.figure.Figure - The deconvolution plot
-    results_df: pd.DataFrame - Results table with peak information
+    fig: The deconvolution plot
+    results_df: Results table with peak information
     """
 
-    # Map parameter names to match original code
-    number_of_peaks = n_peaks
-    plot_sum_of_fitted_peaks = plot_sum
-    peaks = manual_peaks
-    peak_wideness_range = peak_width_range
-
-    # The rest of the function remains exactly the same as the original code
-    # Create interpolation functions for calibration
+    # Create interpolation functions for calibration data
     retention_time_calib = calib_array[:, 0].astype(float)
     log_mw_calib = calib_array[:, 1].astype(float)
 
+    # Create interpolation functions for converting between RT and MW
     f_log_mw = interp1d(retention_time_calib, log_mw_calib, kind='linear', fill_value='extrapolate')
     f_rt = interp1d(log_mw_calib, retention_time_calib, kind='linear', fill_value='extrapolate')
 
-    # Function to convert molecular weight to retention time
+    # Convert molecular weight to retention time
     def mw_to_rt(mw_value):
         log_mw = np.log10(mw_value)
         return f_rt(log_mw)
@@ -79,10 +72,8 @@ def run_deconvolution(
         return np.max(y_array[mask]) if np.any(mask) else 1.0
 
     # Extract and normalize data
-    x_raw = data_array[:, 0]
-    y_raw = data_array[:, 1]
-    x_raw = x_raw.astype(float)
-    y_raw = y_raw.astype(float)
+    x_raw = data_array[:, 0].astype(float)
+    y_raw = data_array[:, 1].astype(float)
     max_y = max_of_y_within_range(x_raw, y_raw, rt_lim[0], rt_lim[1])
     y_raw = y_raw / max_y
 
@@ -91,7 +82,7 @@ def run_deconvolution(
     x_rt = x_raw[mask]
     y_formatted = y_raw[mask]
 
-    # Convert retention time to molecular weight
+    # Convert retention time to molecular weight for x-axis
     x_mw = 10 ** f_log_mw(x_rt)
 
     # Baseline correction function
@@ -136,24 +127,24 @@ def run_deconvolution(
     y_corrected, baseline = baseline_correction(x_rt, y_formatted, x_mw, method=baseline_method)
 
     # Peak Detection
-    if len(peaks) == 0:
+    if len(manual_peaks) == 0:
         # Automatic peak detection
         indices, _ = find_peaks(y_corrected, distance=200, width=50)
         x_peaks_rt = x_rt[indices]
         y_peaks = y_corrected[indices]
 
         # Select top peaks by height
-        if len(y_peaks) >= number_of_peaks:
-            top_indices = np.argsort(y_peaks)[-number_of_peaks:][::-1]
+        if len(y_peaks) >= n_peaks:
+            top_indices = np.argsort(y_peaks)[-n_peaks:][::-1]
             x_peaks_rt = x_peaks_rt[top_indices]
             y_peaks = y_peaks[top_indices]
         else:
-            print(f"Warning: Found only {len(y_peaks)} peaks, but {number_of_peaks} were expected.")
-            number_of_peaks = len(y_peaks)  # Adjust to match what was found
+            st.warning(f"Found only {len(y_peaks)} peaks, but {n_peaks} were expected.")
+            n_peaks = len(y_peaks)  # Adjust to match what was found
     else:
-        # Manual peak entry - can be Mn values or retention times
+        # Manual peak entry
         x_peaks_rt, y_peaks = [], []
-        for peak in peaks:
+        for peak in manual_peaks:
             if peaks_are_mw:
                 # Convert from Mn value to retention time
                 rt = mw_to_rt(peak)
@@ -165,10 +156,10 @@ def run_deconvolution(
             x_peaks_rt.append(x_rt[idx])
             y_peaks.append(y_corrected[idx])
 
-        # Adjust number_of_peaks if needed
-        if len(peaks) < number_of_peaks:
-            print(f"Warning: Only {len(peaks)} peaks provided, but {number_of_peaks} expected.")
-            number_of_peaks = len(peaks)
+        # Adjust n_peaks if needed
+        if len(manual_peaks) < n_peaks:
+            st.warning(f"Only {len(manual_peaks)} peaks provided, but {n_peaks} expected.")
+            n_peaks = len(manual_peaks)
 
     # Gaussian function for peak fitting
     def gaussian(x, amp, mu, sigma):
@@ -177,18 +168,18 @@ def run_deconvolution(
     # Peak Fitting with Gaussian functions
     best_fit = None
     best_residual = np.inf
-    best_width = peak_wideness_range[0]
+    best_width = peak_width_range[0]
     best_fit_params = []  # Store Gaussian parameters
 
     # Try different window widths to find best fit
-    for width in range(peak_wideness_range[0], peak_wideness_range[1]):
+    for width in range(peak_width_range[0], peak_width_range[1]):
         y_current = y_corrected.copy()
         gaussians = []
         params_list = []
 
         try:
             # Fit each peak with a Gaussian
-            for i in range(number_of_peaks):
+            for i in range(n_peaks):
                 mu = x_peaks_rt[i]
                 idx = np.argmin(np.abs(x_rt - mu))
                 start, end = max(0, idx - width), min(len(x_rt), idx + width)
@@ -240,20 +231,15 @@ def run_deconvolution(
         area_percentages = [area_percentages[i] for i in sorted_indices]
         mw_values = [mw_values[i] for i in sorted_indices]
 
-        # Ensure we have enough peak names
+        # Ensure we have enough peak names and colors
         while len(peak_names) < len(best_fit):
             peak_names.append(f"Peak {len(peak_names) + 1}")
-
-        # Trim peak_names if we have fewer peaks than names
         peak_names = peak_names[:len(best_fit)]
 
-        # Ensure we have enough peak colors
         while len(peak_colors) < len(best_fit):
             # Add default colors if not enough provided
             default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c', '#a83232', '#a832a8']
             peak_colors.append(default_colors[len(peak_colors) % len(default_colors)])
-
-        # Trim peak_colors if we have fewer peaks than colors
         peak_colors = peak_colors[:len(best_fit)]
 
     # Create the plot
@@ -268,7 +254,7 @@ def run_deconvolution(
             ax.plot(x_mw, fit, color=peak_colors[i],
                     label=f'{peak_names[i]}: {pct:.1f}%')
 
-        if plot_sum_of_fitted_peaks:
+        if plot_sum:
             # Plot sum of Gaussians
             sum_gaussians = np.sum(best_fit, axis=0)
             ax.plot(x_mw, sum_gaussians, '--', color='black', linewidth=1.5, label='Sum of Gaussians')
