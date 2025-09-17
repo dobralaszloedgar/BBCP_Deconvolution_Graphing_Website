@@ -17,44 +17,38 @@ def _clear_query_params_and_rerun():
             pass
     st.rerun()
 
-def _set_page_meta(title: str, icon: str):
+def _set_page_meta(title: str, icon: str, *, centered: bool = True):
     """
-    Try to set page config. If the launcher already called set_page_config,
-    fall back to JS to update the tab title and favicon dynamically.
+    Try to set page config to centered; if the launcher already set it,
+    fall back to CSS so the page still appears centered.
     """
     try:
         st.set_page_config(
             page_title=title,
             page_icon=icon,
+            layout="centered" if centered else "wide",
             initial_sidebar_state="collapsed",
         )
     except Exception:
-        # Fallback: update title + favicon via a tiny script (works when page_config already set)
-        emoji = icon
-        js = f"""
-        <script>
-        (function() {{
-            const setTitle = (t) => {{ document.title = t; }};
-            const setFavicon = (emoji) => {{
-                const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>
-                               <text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='52'>{emoji}</text>
-                             </svg>`;
-                const url = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
-                let link = document.querySelector("link[rel='icon']") || document.createElement('link');
-                link.setAttribute('rel', 'icon');
-                link.setAttribute('href', url);
-                document.head.appendChild(link);
-            }};
-            setTitle("{title}");
-            setFavicon("{emoji}");
-        }})();
-        </script>
+        # If the launcher set it first, Streamlit will ignore/raise here.
+        # We then enforce a centered look via CSS below.
+        pass
+    st.markdown(
         """
-        st.markdown(js, unsafe_allow_html=True)
+        <style>
+        /* Works across recent Streamlit versions */
+        .stMain .block-container {max-width: 1100px; margin-left: auto; margin-right: auto;}
+        /* Legacy selector (older versions) */
+        [data-testid="stAppViewContainer"] .main .block-container {max-width: 1100px; margin-left: auto; margin-right: auto;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 def main():
     # Ensure tab title and icon reflect the Gaussian page
-    _set_page_meta("Deconvolution", "📊")
+    _set_page_meta("Deconvolution", "📊", centered=True)
 
 
     # Back to launcher
