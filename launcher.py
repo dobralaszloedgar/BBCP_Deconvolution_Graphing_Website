@@ -1,5 +1,4 @@
 import streamlit as st
-import base64
 
 # Set page configuration
 st.set_page_config(
@@ -77,7 +76,7 @@ def main():
 
         if selected_app == "gaussian_deconvolution":
             # Import and run the Gaussian Deconvolution app
-            from gaussian_deconvolution import main as gaussian_main
+            from pages.gaussian_deconvolution import main as gaussian_main
             gaussian_main()
             return
         elif selected_app == "gpc_graphing":
