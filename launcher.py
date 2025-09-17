@@ -1,4 +1,5 @@
 import streamlit as st
+import base64
 
 # Set page configuration
 st.set_page_config(
@@ -23,7 +24,6 @@ st.markdown("""
         align-items: center;
         text-align: center;
         cursor: pointer;
-        background-color: white;
     }
     .card:hover {
         box-shadow: 0 8px 16px 0 rgba(0,0,0,0.2);
@@ -55,9 +55,12 @@ st.markdown("""
 
 # Function to create a card
 def create_card(title, description, icon, app_name):
+    # Encode the app name for the URL
+    encoded_app = base64.b64encode(app_name.encode()).decode()
+
     # Create the card with HTML
     card_html = f"""
-    <div class="card" onclick="window.parent.postMessage({{'type': 'streamlit:setComponentValue', 'value': '{app_name}'}}, '*');">
+    <div class="card" onclick="window.location.href='?app={encoded_app}';">
         <div class="card-content">
             <div class="icon">{icon}</div>
             <div class="title">{title}</div>
@@ -70,41 +73,27 @@ def create_card(title, description, icon, app_name):
 
 # Main app
 def main():
-    # Initialize session state for app selection
-    if 'selected_app' not in st.session_state:
-        st.session_state.selected_app = None
-
-    # Check if an app has been selected via component message
-    try:
-        # This handles messages from the JavaScript onclick
-        component_value = st.query_params.get("app", None)
-        if component_value:
-            st.session_state.selected_app = component_value
-            # Clear the query parameter
-            st.query_params.clear()
-    except:
-        pass
-
-    # Check if an app has been selected
-    if st.session_state.selected_app:
+    # Check if an app has been selected first
+    query_params = st.query_params
+    if "app" in query_params:
         try:
-            if st.session_state.selected_app == "gaussian_deconvolution":
-                # Add a back button
-                if st.button("← Back to Launcher"):
-                    st.session_state.selected_app = None
-                    st.rerun()
-                    return
+            # Get the app parameter value
+            app_param = query_params["app"]
+
+            # Decode the base64 encoded app name
+            selected_app = base64.b64decode(app_param).decode()
+
+            if selected_app == "gaussian_deconvolution":
+                # Clear query parameters to prevent reloading issues
+                st.query_params.clear()
 
                 # Import and run the Gaussian Deconvolution app
                 from gaussian_deconvolution import main as gaussian_main
                 gaussian_main()
                 return
-            elif st.session_state.selected_app == "gpc_graphing":
-                # Add a back button
-                if st.button("← Back to Launcher"):
-                    st.session_state.selected_app = None
-                    st.rerun()
-                    return
+            elif selected_app == "gpc_graphing":
+                # Clear query parameters to prevent reloading issues
+                st.query_params.clear()
 
                 # Import and run the GPC Graphing app
                 from gpc_graphing import main as gpc_main
@@ -114,11 +103,8 @@ def main():
         except Exception as e:
             st.error(f"Error loading application: {str(e)}")
             st.info("Please ensure the application files are available.")
-            # Reset selection on error
-            st.session_state.selected_app = None
-            st.rerun()
 
-    # If no app selected, show the launcher
+    # If no app selected or error occurred, show the launcher
     st.markdown("<h1 style='text-align: center; margin-bottom: 40px;'>Choose an Application</h1>",
                 unsafe_allow_html=True)
 
