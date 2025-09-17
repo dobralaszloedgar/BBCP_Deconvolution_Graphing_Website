@@ -252,3 +252,11 @@ if cal_file and data_file:
 else:
     if data_source == "Upload My Own Data":
         st.info("Upload both calibration and data files to begin.")
+
+def main():
+    # All the existing code from the file should be placed here
+    # This ensures it can be imported and called from the launcher
+    pass
+
+if __name__ == "__main__":
+    main()

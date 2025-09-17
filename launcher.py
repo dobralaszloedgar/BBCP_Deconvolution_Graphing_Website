@@ -74,20 +74,27 @@ def create_card(title, description, icon, app_name):
 # Main app
 def main():
     # Check if an app has been selected first
-    if "app" in st.query_params:
+    query_params = st.query_params
+    if "app" in query_params:
         try:
             # Get the app parameter value
-            app_param = st.query_params["app"]
+            app_param = query_params["app"]
 
             # Decode the base64 encoded app name
             selected_app = base64.b64decode(app_param).decode()
 
             if selected_app == "gaussian_deconvolution":
+                # Clear query parameters to prevent reloading issues
+                st.query_params.clear()
+
                 # Import and run the Gaussian Deconvolution app
                 from gaussian_deconvolution import main as gaussian_main
                 gaussian_main()
                 return
             elif selected_app == "gpc_graphing":
+                # Clear query parameters to prevent reloading issues
+                st.query_params.clear()
+
                 # Import and run the GPC Graphing app
                 from gpc_graphing import main as gpc_main
                 gpc_main()
