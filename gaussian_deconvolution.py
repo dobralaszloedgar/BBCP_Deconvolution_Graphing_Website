@@ -57,6 +57,7 @@ def main():
     # Ensure tab title and icon reflect the Gaussian page
     _set_page_meta("Deconvolution", "📊")
 
+
     # Back to launcher
     if st.button("← Back to Launcher"):
         _clear_query_params_and_rerun()
