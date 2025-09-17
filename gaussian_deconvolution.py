@@ -272,8 +272,8 @@ def main():
             )
 
             # Display results
-            st.pyplot(fig, dpi=600, use_container_width=False)
-            st.dataframe(table, use_container_width=False, )
+            st.pyplot(fig, dpi=600, width="content")
+            st.dataframe(table, width="content")
 
         except Exception as e:
             st.error(f"Error processing files: {str(e)}")
