@@ -119,7 +119,7 @@ def main():
             mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=np.floor(np.log10(mw_min)), format="%e")
             mw_max = st.number_input("MW Upper Bound", 1e3, 1e10, 1e7, step=1e6, format="%e")
             y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01)
-            y_high = st.number_input("Y-Axis Upper", 0.1, 5.0, 1.0, step=0.01)
+            y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01)
         with col2:
             peaks_n = st.slider("Number Of Peaks", 1, 10, 4)
             w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10)
