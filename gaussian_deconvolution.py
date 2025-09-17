@@ -131,7 +131,7 @@ def main():
 
     # Initialize session state for expanders
     if 'expander_basic' not in st.session_state:
-        st.session_state.expander_basic = True
+        st.session_state.expander_basic = False
     if 'expander_advanced' not in st.session_state:
         st.session_state.expander_advanced = False
     if 'expander_appearance' not in st.session_state:
