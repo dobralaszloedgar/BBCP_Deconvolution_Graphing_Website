@@ -5,6 +5,7 @@ import requests
 import tempfile
 import os
 
+
 def _clear_query_params_and_rerun():
     try:
         # New API
@@ -17,29 +18,61 @@ def _clear_query_params_and_rerun():
             pass
     st.rerun()
 
+
 def _set_page_meta(title: str, icon: str):
     """
-    Try to set page config to centered; if the launcher already set it,
-    fall back to CSS so the page still appears centered.
+    Force centered layout using CSS since page config can only be set once
     """
-    try:
-        st.set_page_config(
-            page_title=title,
-            page_icon=icon,
-            layout="centered",
-            initial_sidebar_state="collapsed",
-        )
-    except Exception:
-        # If the launcher set it first, Streamlit will ignore/raise here.
-        # We then enforce a centered look via CSS below.
-        pass
+    # Use JavaScript to set the page title and icon
+    js = f"""
+    <script>
+        document.title = "{title}";
+        // Set favicon
+        const link = document.createElement('link');
+        link.rel = 'icon';
+        link.href = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">{icon}</text></svg>';
+        document.head.appendChild(link);
+    </script>
+    """
+    st.markdown(js, unsafe_allow_html=True)
+
+    # Force centered layout with CSS
     st.markdown(
         """
         <style>
-        /* Works across recent Streamlit versions */
-        .stMain .block-container {max-width: 1100px; margin-left: auto; margin-right: auto;}
-        /* Legacy selector (older versions) */
-        [data-testid="stAppViewContainer"] .main .block-container {max-width: 1100px; margin-left: auto; margin-right: auto;}
+        /* Main container */
+        .main .block-container {
+            max-width: 1000px;
+            padding-left: 2rem;
+            padding-right: 2rem;
+        }
+
+        /* For newer Streamlit versions */
+        section[data-testid="stSidebar"] {
+            display: none !important;
+        }
+
+        /* Hide the sidebar */
+        .stApp > div:first-child {
+            display: none;
+        }
+
+        /* Center the content */
+        .stApp {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Adjust column widths for centered layout */
+        .stHorizontalBlock {
+            max-width: 1000px;
+        }
+
+        /* Ensure content doesn't stretch too wide */
+        .element-container {
+            max-width: 1000px;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -49,7 +82,6 @@ def _set_page_meta(title: str, icon: str):
 def main():
     # Ensure tab title and icon reflect the Gaussian page
     _set_page_meta("Deconvolution", "📊")
-
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -297,6 +329,7 @@ def main():
     else:
         if data_source == "Upload My Own Data":
             st.info("Upload both calibration and data files to begin.")
+
 
 if __name__ == "__main__":
     main()
