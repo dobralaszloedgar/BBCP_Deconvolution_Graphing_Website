@@ -9,6 +9,13 @@ import streamlit as st
 import matplotlib.font_manager as fm
 import os
 
+# Add pybaselines import
+try:
+    from pybaselines import Baseline
+    PYBASELINES_AVAILABLE = True
+except ImportError:
+    PYBASELINES_AVAILABLE = False
+    st.warning("pybaselines not installed. LOESS baseline correction will not be available.")
 
 def setup_custom_fonts():
     """Add custom fonts from the fonts directory to matplotlib's font manager"""
@@ -107,6 +114,15 @@ def run_deconvolution(
         if method == 'None':
             # No baseline correction
             return y, np.zeros_like(y)
+        elif method == 'loess':
+            if not PYBASELINES_AVAILABLE:
+                raise ImportError("pybaselines is required for LOESS baseline correction")
+            baseline_fitter = Baseline()
+            baseline = baseline_fitter.loess(
+                y, symmetric_weights=True, fraction=0.35,
+                scale=1.5, poly_order=2
+            )[0]
+            return y - baseline, baseline
 
         ref_points = []
         required_ranges = {'flat': 1, 'linear': 2, 'quadratic': 3}.get(method, 0)
