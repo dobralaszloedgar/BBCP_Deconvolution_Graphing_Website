@@ -1,5 +1,6 @@
 import streamlit as st
 import base64
+import textwrap  # NEW: used to remove indentation from HTML strings
 
 # Page config
 st.set_page_config(
@@ -9,7 +10,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Dark-mode aware styles and card layout with overlay link (no <div> inside <a>)
+# Dark-mode aware styles and card layout
 st.markdown("""
 <style>
 :root {
@@ -110,7 +111,7 @@ st.markdown("""
   color: inherit;
 }
 
-/* Header styling without Markdown anchor artifacts */
+/* Header styling without Markdown auto-anchor */
 .header {
   text-align: center;
   margin-bottom: 40px;
@@ -123,23 +124,24 @@ st.markdown("""
 
 
 def create_card(title: str, description: str, icon: str, app_name: str, *, disabled: bool = False, badge: str | None = None) -> str:
-    # Card HTML with separate overlay anchor to avoid <div> inside <a>
     badge_html = f'<div class="badge">{badge}</div>' if badge else ""
     disabled_class = " disabled" if disabled else ""
     link_html = "" if disabled else f'<a class="overlay-link" href="?app={app_name}" aria-label="Open {title}">Open {title}</a>'
-    return f"""
-    <div class="card-wrapper">
-      <div class="card{disabled_class}">
-        {badge_html}
-        <div class="card-content">
-            <div class="icon">{icon}</div>
-            <div class="title">{title}</div>
-            <div class="description">{description}</div>
-        </div>
-      </div>
-      {link_html}
+    html = f"""
+<div class="card-wrapper">
+  <div class="card{disabled_class}">
+    {badge_html}
+    <div class="card-content">
+      <div class="icon">{icon}</div>
+      <div class="title">{title}</div>
+      <div class="description">{description}</div>
     </div>
-    """
+  </div>
+  {link_html}
+</div>
+"""
+    # CRITICAL: remove leading indentation so Markdown doesn't treat it as a code block
+    return textwrap.dedent(html).strip()
 
 
 def _get_selected_app():
@@ -185,7 +187,7 @@ def main():
         _back_to_launcher_button()
         return
 
-    # Header (as HTML, not Markdown, to avoid auto-anchor markup)
+    # Header as HTML (no Markdown anchors)
     st.markdown('<div class="header">Choose an Application</div>', unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
