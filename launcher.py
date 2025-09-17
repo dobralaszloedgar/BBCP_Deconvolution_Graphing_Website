@@ -1,5 +1,4 @@
 import streamlit as st
-import base64
 
 # Set page configuration
 st.set_page_config(
@@ -9,10 +8,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for styling buttons to look like cards
+# Custom CSS for styling
 st.markdown("""
 <style>
-    .card-button {
+    .card {
         padding: 20px;
         border-radius: 10px;
         box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
@@ -23,12 +22,10 @@ st.markdown("""
         justify-content: center;
         align-items: center;
         text-align: center;
-        width: 100%;
-        background-color: white;
-        border: none;
         cursor: pointer;
+        background-color: white;
     }
-    .card-button:hover {
+    .card:hover {
         box-shadow: 0 8px 16px 0 rgba(0,0,0,0.2);
         transform: translateY(-5px);
     }
@@ -52,62 +49,62 @@ st.markdown("""
         font-size: 16px;
         color: #666;
     }
-    /* Hide the default button styling */
-    .stButton > button {
-        background: transparent;
-        border: none;
-        padding: 0;
-        width: 100%;
-    }
 </style>
 """, unsafe_allow_html=True)
 
 
-# Function to create a card button
-def create_card_button(title, description, icon, app_name):
-    # Use columns to create a card-like appearance
-    col1, col2, col3 = st.columns([1, 4, 1])
-    with col2:
-        # Create a button that looks like a card
-        if st.button("", key=f"btn_{app_name}"):
-            # Set the query parameter to launch the app
-            st.query_params["app"] = base64.b64encode(app_name.encode()).decode()
-            st.rerun()
-
-        # Display the card content
-        st.markdown(f"""
-        <div class="card-button">
-            <div class="card-content">
-                <div class="icon">{icon}</div>
-                <div class="title">{title}</div>
-                <div class="description">{description}</div>
-            </div>
+# Function to create a card
+def create_card(title, description, icon, app_name):
+    # Create the card with HTML
+    card_html = f"""
+    <div class="card" onclick="window.parent.postMessage({{'type': 'streamlit:setComponentValue', 'value': '{app_name}'}}, '*');">
+        <div class="card-content">
+            <div class="icon">{icon}</div>
+            <div class="title">{title}</div>
+            <div class="description">{description}</div>
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """
+    return card_html
 
 
 # Main app
 def main():
-    # Check if an app has been selected first
-    if "app" in st.query_params:
+    # Initialize session state for app selection
+    if 'selected_app' not in st.session_state:
+        st.session_state.selected_app = None
+
+    # Check if an app has been selected via component message
+    try:
+        # This handles messages from the JavaScript onclick
+        component_value = st.query_params.get("app", None)
+        if component_value:
+            st.session_state.selected_app = component_value
+            # Clear the query parameter
+            st.query_params.clear()
+    except:
+        pass
+
+    # Check if an app has been selected
+    if st.session_state.selected_app:
         try:
-            # Get the app parameter value
-            app_param = st.query_params["app"]
-
-            # Decode the base64 encoded app name
-            selected_app = base64.b64decode(app_param).decode()
-
-            if selected_app == "gaussian_deconvolution":
-                # Clear query parameters to prevent reloading issues
-                st.query_params.clear()
+            if st.session_state.selected_app == "gaussian_deconvolution":
+                # Add a back button
+                if st.button("← Back to Launcher"):
+                    st.session_state.selected_app = None
+                    st.rerun()
+                    return
 
                 # Import and run the Gaussian Deconvolution app
                 from gaussian_deconvolution import main as gaussian_main
                 gaussian_main()
                 return
-            elif selected_app == "gpc_graphing":
-                # Clear query parameters to prevent reloading issues
-                st.query_params.clear()
+            elif st.session_state.selected_app == "gpc_graphing":
+                # Add a back button
+                if st.button("← Back to Launcher"):
+                    st.session_state.selected_app = None
+                    st.rerun()
+                    return
 
                 # Import and run the GPC Graphing app
                 from gpc_graphing import main as gpc_main
@@ -117,8 +114,11 @@ def main():
         except Exception as e:
             st.error(f"Error loading application: {str(e)}")
             st.info("Please ensure the application files are available.")
+            # Reset selection on error
+            st.session_state.selected_app = None
+            st.rerun()
 
-    # If no app selected or error occurred, show the launcher
+    # If no app selected, show the launcher
     st.markdown("<h1 style='text-align: center; margin-bottom: 40px;'>Choose an Application</h1>",
                 unsafe_allow_html=True)
 
@@ -127,21 +127,23 @@ def main():
 
     # Gaussian Deconvolution card
     with col1:
-        create_card_button(
+        card1 = create_card(
             "Gaussian Deconvolution",
             "Deconvolute chromatogram data into Gaussian peaks for molecular weight analysis",
             "📊",
             "gaussian_deconvolution"
         )
+        st.markdown(card1, unsafe_allow_html=True)
 
     # GPC Graphing card
     with col2:
-        create_card_button(
+        card2 = create_card(
             "GPC Graphing",
             "Create and customize GPC chromatograms with various visualization options",
             "📈",
             "gpc_graphing"
         )
+        st.markdown(card2, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
