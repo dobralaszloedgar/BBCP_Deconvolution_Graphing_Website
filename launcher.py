@@ -60,11 +60,30 @@ st.markdown("""
   .description { color: var(--muted-light); }
 }
 
-/* Hover state for enabled cards */
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 18px rgba(0,0,0,0.22);
+/* Base interaction cues */
+.card { cursor: default; }
+.card:not(.disabled) { cursor: pointer; }
+
+/* Hover state for enabled cards: subtle lift and border highlight */
+.card:not(.disabled):hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 22px rgba(0,0,0,0.24);
+  border-color: rgba(59,130,246,0.35); /* blue-ish accent */
 }
+
+/* Focus-visible ring when navigating via keyboard */
+.card:not(.disabled):focus-within {
+  outline: 2px solid #3b82f6;
+  outline-offset: 4px;
+}
+
+/* Disabled: keep it static on hover, but slightly tint to signal non-interactive */
+.card.disabled:hover {
+  transform: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.16);
+  border-color: rgba(255,255,255,0.12);
+}
+
 
 /* Invisible overlay link that makes the whole card clickable */
 .overlay-link {

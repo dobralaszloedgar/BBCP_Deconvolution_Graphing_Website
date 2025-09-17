@@ -18,6 +18,13 @@ def _clear_query_params_and_rerun():
     st.rerun()
 
 def main():
+    # Page config
+    st.set_page_config(
+        page_title="Deconvolution",
+        page_icon="📊",
+        layout="centered",
+        initial_sidebar_state="collapsed"
+    )
     # Back to launcher
     if st.button("← Back to Launcher"):
         _clear_query_params_and_rerun()
