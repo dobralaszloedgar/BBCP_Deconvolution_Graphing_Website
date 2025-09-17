@@ -126,22 +126,22 @@ st.markdown("""
 def create_card(title: str, description: str, icon: str, app_name: str, *, disabled: bool = False, badge: str | None = None) -> str:
     badge_html = f'<div class="badge">{badge}</div>' if badge else ""
     disabled_class = " disabled" if disabled else ""
+    # Use a full-size invisible overlay link only when enabled (avoids <div> inside <a>)
     link_html = "" if disabled else f'<a class="overlay-link" href="?app={app_name}" aria-label="Open {title}">Open {title}</a>'
-    html = f"""
-        <div class="card-wrapper">
-          <div class="card{disabled_class}">
-            {badge_html}
-            <div class="card-content">
-              <div class="icon">{icon}</div>
-              <div class="title">{title}</div>
-              <div class="description">{description}</div>
-            </div>
-          </div>
-          {link_html}
-        </div>
-        """
-    # CRITICAL: remove leading indentation so Markdown doesn't treat it as a code block
-    return textwrap.dedent(html).strip()
+    # CRITICAL: single-line, no leading spaces/newlines, so Markdown never sees a code block
+    return (
+        f'<div class="card-wrapper">'
+        f'  <div class="card{disabled_class}">'
+        f'    {badge_html}'
+        f'    <div class="card-content">'
+        f'      <div class="icon">{icon}</div>'
+        f'      <div class="title">{title}</div>'
+        f'      <div class="description">{description}</div>'
+        f'    </div>'
+        f'  </div>'
+        f'  {link_html}'
+        f'</div>'
+    )
 
 
 def _get_selected_app():
