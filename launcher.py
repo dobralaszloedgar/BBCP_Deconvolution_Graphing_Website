@@ -128,18 +128,18 @@ def create_card(title: str, description: str, icon: str, app_name: str, *, disab
     disabled_class = " disabled" if disabled else ""
     link_html = "" if disabled else f'<a class="overlay-link" href="?app={app_name}" aria-label="Open {title}">Open {title}</a>'
     html = f"""
-    <div class="card-wrapper">
-      <div class="card{disabled_class}">
-        {badge_html}
-        <div class="card-content">
-          <div class="icon">{icon}</div>
-          <div class="title">{title}</div>
-          <div class="description">{description}</div>
+        <div class="card-wrapper">
+          <div class="card{disabled_class}">
+            {badge_html}
+            <div class="card-content">
+              <div class="icon">{icon}</div>
+              <div class="title">{title}</div>
+              <div class="description">{description}</div>
+            </div>
+          </div>
+          {link_html}
         </div>
-      </div>
-      {link_html}
-    </div>
-    """
+        """
     # CRITICAL: remove leading indentation so Markdown doesn't treat it as a code block
     return textwrap.dedent(html).strip()
 
