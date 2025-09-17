@@ -40,38 +40,34 @@ def _set_page_meta(title: str, icon: str):
     st.markdown(
         """
         <style>
-        /* Main container */
+        /* Main container - more specific selectors */
         .main .block-container {
             max-width: 1000px;
             padding-left: 2rem;
             padding-right: 2rem;
-        }
-
-        /* For newer Streamlit versions */
-        section[data-testid="stSidebar"] {
-            display: none !important;
-        }
-
-        /* Hide the sidebar */
-        .stApp > div:first-child {
-            display: none;
-        }
-
-        /* Center the content */
-        .stApp {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        /* Adjust column widths for centered layout */
-        .stHorizontalBlock {
-            max-width: 1000px;
+            margin-left: auto;
+            margin-right: auto;
         }
 
         /* Ensure content doesn't stretch too wide */
+        .stApp {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Make sure columns are properly sized */
+        .stHorizontalBlock > div {
+            width: 100%;
+        }
+
+        /* Adjust expander widths */
+        .streamlit-expanderHeader {
+            font-size: 1rem;
+        }
+
+        /* Ensure proper spacing */
         .element-container {
-            max-width: 1000px;
+            margin-bottom: 1rem;
         }
         </style>
         """,
@@ -131,7 +127,7 @@ def main():
 
     # Initialize session state for expanders
     if 'expander_basic' not in st.session_state:
-        st.session_state.expander_basic = False
+        st.session_state.expander_basic = True
     if 'expander_advanced' not in st.session_state:
         st.session_state.expander_advanced = False
     if 'expander_appearance' not in st.session_state:
