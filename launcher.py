@@ -9,10 +9,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for styling buttons to look like cards
+# Custom CSS for styling
 st.markdown("""
 <style>
-    .card-button {
+    .card {
         padding: 20px;
         border-radius: 10px;
         box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
@@ -23,12 +23,9 @@ st.markdown("""
         justify-content: center;
         align-items: center;
         text-align: center;
-        width: 100%;
-        background-color: white;
-        border: none;
         cursor: pointer;
     }
-    .card-button:hover {
+    .card:hover {
         box-shadow: 0 8px 16px 0 rgba(0,0,0,0.2);
         transform: translateY(-5px);
     }
@@ -52,47 +49,36 @@ st.markdown("""
         font-size: 16px;
         color: #666;
     }
-    /* Hide the default button styling */
-    .stButton > button {
-        background: transparent;
-        border: none;
-        padding: 0;
-        width: 100%;
-    }
 </style>
 """, unsafe_allow_html=True)
 
 
-# Function to create a card button
-def create_card_button(title, description, icon, app_name):
-    # Use columns to create a card-like appearance
-    col1, col2, col3 = st.columns([1, 4, 1])
-    with col2:
-        # Create a button that looks like a card
-        if st.button("", key=f"btn_{app_name}"):
-            # Set the query parameter to launch the app
-            st.query_params["app"] = base64.b64encode(app_name.encode()).decode()
-            st.rerun()
+# Function to create a card
+def create_card(title, description, icon, app_name):
+    # Encode the app name for the URL
+    encoded_app = base64.b64encode(app_name.encode()).decode()
 
-        # Display the card content
-        st.markdown(f"""
-        <div class="card-button">
-            <div class="card-content">
-                <div class="icon">{icon}</div>
-                <div class="title">{title}</div>
-                <div class="description">{description}</div>
-            </div>
+    # Create the card with HTML
+    card_html = f"""
+    <div class="card" onclick="window.location.href='?app={encoded_app}';">
+        <div class="card-content">
+            <div class="icon">{icon}</div>
+            <div class="title">{title}</div>
+            <div class="description">{description}</div>
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """
+    return card_html
 
 
 # Main app
 def main():
     # Check if an app has been selected first
-    if "app" in st.query_params:
+    query_params = st.query_params
+    if "app" in query_params:
         try:
             # Get the app parameter value
-            app_param = st.query_params["app"]
+            app_param = query_params["app"]
 
             # Decode the base64 encoded app name
             selected_app = base64.b64decode(app_param).decode()
@@ -127,21 +113,23 @@ def main():
 
     # Gaussian Deconvolution card
     with col1:
-        create_card_button(
+        card1 = create_card(
             "Gaussian Deconvolution",
             "Deconvolute chromatogram data into Gaussian peaks for molecular weight analysis",
             "📊",
             "gaussian_deconvolution"
         )
+        st.markdown(card1, unsafe_allow_html=True)
 
     # GPC Graphing card
     with col2:
-        create_card_button(
+        card2 = create_card(
             "GPC Graphing",
             "Create and customize GPC chromatograms with various visualization options",
             "📈",
             "gpc_graphing"
         )
+        st.markdown(card2, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
