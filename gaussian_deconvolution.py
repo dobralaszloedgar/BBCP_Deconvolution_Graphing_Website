@@ -17,14 +17,46 @@ def _clear_query_params_and_rerun():
             pass
     st.rerun()
 
+def _set_page_meta(title: str, icon: str):
+    """
+    Try to set page config. If the launcher already called set_page_config,
+    fall back to JS to update the tab title and favicon dynamically.
+    """
+    try:
+        st.set_page_config(
+            page_title=title,
+            page_icon=icon,
+            layout="centered",
+            initial_sidebar_state="collapsed",
+        )
+    except Exception:
+        # Fallback: update title + favicon via a tiny script (works when page_config already set)
+        emoji = icon
+        js = f"""
+        <script>
+        (function() {{
+            const setTitle = (t) => {{ document.title = t; }};
+            const setFavicon = (emoji) => {{
+                const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>
+                               <text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='52'>{emoji}</text>
+                             </svg>`;
+                const url = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
+                let link = document.querySelector("link[rel='icon']") || document.createElement('link');
+                link.setAttribute('rel', 'icon');
+                link.setAttribute('href', url);
+                document.head.appendChild(link);
+            }};
+            setTitle("{title}");
+            setFavicon("{emoji}");
+        }})();
+        </script>
+        """
+        st.markdown(js, unsafe_allow_html=True)
+
 def main():
-    # Page config
-    st.set_page_config(
-        page_title="Deconvolution",
-        page_icon="📊",
-        layout="centered",
-        initial_sidebar_state="collapsed"
-    )
+    # Ensure tab title and icon reflect the Gaussian page
+    _set_page_meta("Deconvolution", "📊")
+
     # Back to launcher
     if st.button("← Back to Launcher"):
         _clear_query_params_and_rerun()
@@ -246,7 +278,6 @@ def main():
         except Exception as e:
             st.error(f"Error processing files: {str(e)}")
             st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
-
         finally:
             # Clean up temporary files if example data was used
             if data_source == "Use Example Data":
