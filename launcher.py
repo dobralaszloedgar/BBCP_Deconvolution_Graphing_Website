@@ -1,6 +1,5 @@
 import streamlit as st
 import base64
-from io import BytesIO
 
 # Set page configuration
 st.set_page_config(
@@ -74,7 +73,28 @@ def create_card(title, description, icon, app_name):
 
 # Main app
 def main():
-    # Center the title
+    # Check if an app has been selected first
+    query_params = st.experimental_get_query_params()
+    if "app" in query_params:
+        try:
+            selected_app = base64.b64decode(query_params["app"][0]).decode()
+
+            if selected_app == "gaussian_deconvolution":
+                # Import and run the Gaussian Deconvolution app
+                from gaussian_deconvolution import main as gaussian_main
+                gaussian_main()
+                return
+            elif selected_app == "gpc_graphing":
+                # Import and run the GPC Graphing app
+                from gpc_graphing import main as gpc_main
+                gpc_main()
+                return
+
+        except Exception as e:
+            st.error(f"Error loading application: {str(e)}")
+            st.info("Please ensure the application files are available.")
+
+    # If no app selected or error occurred, show the launcher
     st.markdown("<h1 style='text-align: center; margin-bottom: 40px;'>Application Launcher</h1>",
                 unsafe_allow_html=True)
 
@@ -100,28 +120,6 @@ def main():
             "gpc_graphing"
         )
         st.markdown(card2, unsafe_allow_html=True)
-
-    # Add some spacing
-    st.markdown("<br><br>", unsafe_allow_html=True)
-
-    # Check if an app has been selected
-    query_params = st.query_params()
-    if "app" in query_params:
-        try:
-            selected_app = base64.b64decode(query_params["app"][0]).decode()
-
-            if selected_app == "gaussian_deconvolution":
-                # Import and run the Gaussian Deconvolution app
-                from gaussian_deconvolution import main as gaussian_main
-                gaussian_main()
-            elif selected_app == "gpc_graphing":
-                # Import and run the GPC Graphing app
-                from gpc_graphing import main as gpc_main
-                gpc_main()
-
-        except Exception as e:
-            st.error(f"Error loading application: {str(e)}")
-            st.info("Please ensure the application files are available.")
 
 
 if __name__ == "__main__":
