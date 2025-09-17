@@ -19,7 +19,7 @@ def _clear_query_params_and_rerun():
     st.rerun()
 
 
-def _set_page_meta(title: str, icon: str):
+def _set_page_meta(title: str, icon: str, *, centered: bool = True):
     """
     Force centered layout using CSS since page config can only be set once
     """
@@ -77,7 +77,7 @@ def _set_page_meta(title: str, icon: str):
 
 def main():
     # Ensure tab title and icon reflect the Gaussian page
-    _set_page_meta("Deconvolution", "📊")
+    _set_page_meta("Deconvolution", "📊", centered=True)
 
     # Back to launcher
     if st.button("← Back to Launcher"):
