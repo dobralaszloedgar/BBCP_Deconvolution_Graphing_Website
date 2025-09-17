@@ -1,4 +1,5 @@
 import streamlit as st
+import base64
 
 # Set page configuration
 st.set_page_config(
@@ -23,6 +24,7 @@ st.markdown("""
         align-items: center;
         text-align: center;
         cursor: pointer;
+        background-color: white;
     }
     .card:hover {
         box-shadow: 0 8px 16px 0 rgba(0,0,0,0.2);
@@ -48,69 +50,92 @@ st.markdown("""
         font-size: 16px;
         color: #666;
     }
+    a.card-link {
+        text-decoration: none;
+        color: inherit;
+        width: 100%;
+        display: block;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 
-# Function to create a card
-def create_card(title, description, icon, app_name):
-    # Create the card with HTML
-    card_html = f"""
-    <div class="card" onclick="window.location.href='?app={app_name}';">
+def create_card(title: str, description: str, icon: str, app_name: str) -> str:
+    # Wrap the card in an anchor link instead of inline JS
+    return f"""
+    <a class="card-link" href="?app={app_name}" target="_self">
+      <div class="card">
         <div class="card-content">
             <div class="icon">{icon}</div>
             <div class="title">{title}</div>
             <div class="description">{description}</div>
         </div>
-    </div>
+      </div>
+    </a>
     """
-    return card_html
 
 
-# Main app
+def _get_selected_app():
+    # Handle Streamlit versions with either st.query_params or experimental_get_query_params
+    app_val = None
+    try:
+        qp = st.query_params  # New API (dict-like)
+        app_val = qp.get("app")
+    except Exception:
+        try:
+            qp = st.experimental_get_query_params()  # Old API returns dict of lists
+            app_val = qp.get("app")
+        except Exception:
+            app_val = None
+    # Normalize value
+    if isinstance(app_val, list):
+        return app_val[0] if app_val else None
+    return app_val
+
+
 def main():
-    # Check if an app has been selected
-    query_params = st.query_params
-    if "app" in query_params:
-        selected_app = query_params["app"]
-
-        if selected_app == "gaussian_deconvolution":
-            # Import and run the Gaussian Deconvolution app
-            from pages.gaussian_deconvolution import main as gaussian_main
-            gaussian_main()
-            return
-        elif selected_app == "gpc_graphing":
-            # Import and run the GPC Graphing app
+    # Router
+    selected_app = _get_selected_app()
+    if selected_app == "gaussian_deconvolution":
+        from gaussian_deconvolution import main as gaussian_main
+        gaussian_main()
+        return
+    elif selected_app == "gpc_graphing":
+        try:
             from gpc_graphing import main as gpc_main
             gpc_main()
             return
+        except Exception as e:
+            st.error(f"GPC Graphing could not be loaded: {e}")
 
-    # If no app selected, show the launcher
+    # Launcher UI
     st.markdown("<h1 style='text-align: center; margin-bottom: 40px;'>Choose an Application</h1>",
                 unsafe_allow_html=True)
 
-    # Create two columns
     col1, col2 = st.columns(2)
 
-    # Gaussian Deconvolution card
     with col1:
-        card1 = create_card(
+        st.markdown(create_card(
             "Gaussian Deconvolution",
             "Deconvolute chromatogram data into Gaussian peaks for molecular weight analysis",
             "📊",
             "gaussian_deconvolution"
-        )
-        st.markdown(card1, unsafe_allow_html=True)
+        ), unsafe_allow_html=True)
 
-    # GPC Graphing card
     with col2:
-        card2 = create_card(
+        st.markdown(create_card(
             "GPC Graphing",
             "Create and customize GPC chromatograms with various visualization options",
             "📈",
             "gpc_graphing"
-        )
-        st.markdown(card2, unsafe_allow_html=True)
+        ), unsafe_allow_html=True)
+
+    # Optional: Pure-Streamlit fallback navigation (no query params) if preferred:
+    # with col1:
+    #     if st.button("Open Gaussian Deconvolution", use_container_width=True):
+    #         from gaussian_deconvolution import main as gaussian_main
+    #         gaussian_main()
+    #         st.stop()
 
 
 if __name__ == "__main__":
