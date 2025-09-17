@@ -4,7 +4,7 @@ import streamlit as st
 st.set_page_config(
     page_title="Gaussian Launcher",
     page_icon="🚀",
-    layout="wide",
+    layout="centered",
     initial_sidebar_state="collapsed"
 )
 
