@@ -3,7 +3,7 @@ import base64
 
 # Set page configuration
 st.set_page_config(
-    page_title="App Launcher",
+    page_title="Gaussian Launcher",
     page_icon="🚀",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -98,7 +98,7 @@ def main():
             st.info("Please ensure the application files are available.")
 
     # If no app selected or error occurred, show the launcher
-    st.markdown("<h1 style='text-align: center; margin-bottom: 40px;'>Application Launcher</h1>",
+    st.markdown("<h1 style='text-align: center; margin-bottom: 40px;'>Choose an Application</h1>",
                 unsafe_allow_html=True)
 
     # Create two columns
