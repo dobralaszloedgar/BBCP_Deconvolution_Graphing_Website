@@ -5,6 +5,7 @@ import requests
 import tempfile
 import os
 
+
 def _clear_query_params_and_rerun():
     try:
         # New API
@@ -17,6 +18,7 @@ def _clear_query_params_and_rerun():
             pass
     st.rerun()
 
+
 def _set_page_meta(title: str, icon: str):
     """
     Try to set page config. If the launcher already called set_page_config,
@@ -26,6 +28,7 @@ def _set_page_meta(title: str, icon: str):
         st.set_page_config(
             page_title=title,
             page_icon=icon,
+            layout="centered",  # Force centered layout
             initial_sidebar_state="collapsed",
         )
     except Exception:
@@ -47,15 +50,32 @@ def _set_page_meta(title: str, icon: str):
             }};
             setTitle("{title}");
             setFavicon("{emoji}");
+
+            // Force centered layout with CSS
+            const style = document.createElement('style');
+            style.innerHTML = `
+                .main .block-container {{
+                    max-width: 800px;
+                    padding-left: 5rem;
+                    padding-right: 5rem;
+                }}
+                @media (max-width: 992px) {{
+                    .main .block-container {{
+                        padding-left: 2rem;
+                        padding-right: 2rem;
+                    }}
+                }}
+            `;
+            document.head.appendChild(style);
         }})();
         </script>
         """
         st.markdown(js, unsafe_allow_html=True)
 
+
 def main():
     # Ensure tab title and icon reflect the Gaussian page
     _set_page_meta("Deconvolution", "📊")
-
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -303,6 +323,7 @@ def main():
     else:
         if data_source == "Upload My Own Data":
             st.info("Upload both calibration and data files to begin.")
+
 
 if __name__ == "__main__":
     main()
