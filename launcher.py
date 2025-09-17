@@ -74,10 +74,13 @@ def create_card(title, description, icon, app_name):
 # Main app
 def main():
     # Check if an app has been selected first
-    query_params = st.experimental_get_query_params()
-    if "app" in query_params:
+    if "app" in st.query_params:
         try:
-            selected_app = base64.b64decode(query_params["app"][0]).decode()
+            # Get the app parameter value
+            app_param = st.query_params["app"]
+
+            # Decode the base64 encoded app name
+            selected_app = base64.b64decode(app_param).decode()
 
             if selected_app == "gaussian_deconvolution":
                 # Import and run the Gaussian Deconvolution app
