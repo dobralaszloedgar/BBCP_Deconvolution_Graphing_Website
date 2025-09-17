@@ -55,12 +55,9 @@ st.markdown("""
 
 # Function to create a card
 def create_card(title, description, icon, app_name):
-    # Encode the app name for the URL
-    encoded_app = base64.b64encode(app_name.encode()).decode()
-
     # Create the card with HTML
     card_html = f"""
-    <div class="card" onclick="window.location.href='?app={encoded_app}';">
+    <div class="card" onclick="window.location.href='?app={app_name}';">
         <div class="card-content">
             <div class="icon">{icon}</div>
             <div class="title">{title}</div>
@@ -73,38 +70,23 @@ def create_card(title, description, icon, app_name):
 
 # Main app
 def main():
-    # Check if an app has been selected first
+    # Check if an app has been selected
     query_params = st.query_params
     if "app" in query_params:
-        try:
-            # Get the app parameter value
-            app_param = query_params["app"]
+        selected_app = query_params["app"]
 
-            # Decode the base64 encoded app name
-            selected_app = base64.b64decode(app_param).decode()
+        if selected_app == "gaussian_deconvolution":
+            # Import and run the Gaussian Deconvolution app
+            from gaussian_deconvolution import main as gaussian_main
+            gaussian_main()
+            return
+        elif selected_app == "gpc_graphing":
+            # Import and run the GPC Graphing app
+            from gpc_graphing import main as gpc_main
+            gpc_main()
+            return
 
-            if selected_app == "gaussian_deconvolution":
-                # Clear query parameters to prevent reloading issues
-                st.query_params.clear()
-
-                # Import and run the Gaussian Deconvolution app
-                from gaussian_deconvolution import main as gaussian_main
-                gaussian_main()
-                return
-            elif selected_app == "gpc_graphing":
-                # Clear query parameters to prevent reloading issues
-                st.query_params.clear()
-
-                # Import and run the GPC Graphing app
-                from gpc_graphing import main as gpc_main
-                gpc_main()
-                return
-
-        except Exception as e:
-            st.error(f"Error loading application: {str(e)}")
-            st.info("Please ensure the application files are available.")
-
-    # If no app selected or error occurred, show the launcher
+    # If no app selected, show the launcher
     st.markdown("<h1 style='text-align: center; margin-bottom: 40px;'>Choose an Application</h1>",
                 unsafe_allow_html=True)
 
