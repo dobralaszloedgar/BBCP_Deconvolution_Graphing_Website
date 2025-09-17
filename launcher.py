@@ -9,76 +9,75 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Theming + card styles (dark-mode aware, using Streamlit theme vars with sensible fallbacks)
+# Dark-mode aware styling with subtle shadows and no washed-out glow
 st.markdown("""
 <style>
 :root {
   --bg: var(--background-color, #0e1117);
   --fg: var(--text-color, #e5e7eb);
-  --secondary-bg: var(--secondary-background-color, #1f2937);
-  --muted: #9ca3af;
-  --muted-light: #6b7280;
-  --card-bg-light: #ffffff;
-  --card-bg-dark: #1f2937;
+  --surface-dark: rgba(255,255,255,0.04);
+  --surface-light: #ffffff;
+  --border-dark: rgba(255,255,255,0.10);
   --border-light: rgba(0,0,0,0.08);
-  --border-dark: rgba(255,255,255,0.08);
+  --muted-dark: #a3a3a3;
+  --muted-light: #6b7280;
 }
 .stApp { background-color: var(--bg); color: var(--fg); }
 h1 { color: var(--fg); }
 
-/* Anchor wrapper so the whole card is clickable */
+.card-grid { margin-top: 8px; }
+
+/* Make the link wrapper neutral */
 .card-link {
   text-decoration: none;
   color: inherit;
-  width: 100%;
   display: block;
-  position: relative;
+  width: 100%;
+  background: transparent;
 }
+
+/* Reduce default focus ring on the anchor, but keep accessibility */
+.card-link:focus-visible { outline: 2px solid #3b82f6; outline-offset: 4px; border-radius: 16px; }
 
 /* Card base */
 .card {
-  padding: 20px;
-  border-radius: 14px;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  position: relative;
+  padding: 22px;
+  border-radius: 16px;
   height: 300px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   text-align: center;
+
+  /* Dark defaults */
+  background: var(--surface-dark);
   border: 1px solid var(--border-dark);
-  background-color: var(--secondary-bg);
   color: var(--fg);
+
+  /* Subtle shadow only (remove big bloom) */
+  box-shadow: 0 4px 14px rgba(0,0,0,0.20);
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background-color 120ms ease;
 }
 
 /* Light mode overrides */
 @media (prefers-color-scheme: light) {
   .card {
-    background-color: var(--card-bg-light);
-    color: #111827;
+    background: var(--surface-light);
     border: 1px solid var(--border-light);
+    color: #111827;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.10);
   }
-  .description { color: var(--muted-light) !important; }
 }
 
-/* Dark mode overrides */
-@media (prefers-color-scheme: dark) {
-  .card {
-    background-color: var(--card-bg-dark);
-    color: #e5e7eb;
-    border: 1px solid var(--border-dark);
-  }
-  .description { color: var(--muted) !important; }
-}
-
-/* Hover state for enabled cards */
+/* Hover state: very subtle lift, no glowing halo */
 .card:hover {
-  box-shadow: 0 12px 28px rgba(0,0,0,0.35);
-  transform: translateY(-4px);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.22);
 }
 
-/* Inner layout */
+/* Content */
 .card-content {
   display: flex;
   flex-direction: column;
@@ -86,48 +85,57 @@ h1 { color: var(--fg); }
   justify-content: center;
   height: 100%;
 }
-.icon { font-size: 60px; margin-bottom: 20px; }
-.title { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
-.description { font-size: 16px; }
+
+.icon { font-size: 56px; margin-bottom: 16px; }
+.title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+.description { font-size: 15px; color: var(--muted-dark); line-height: 1.45; }
+
+/* Light-mode muted text */
+@media (prefers-color-scheme: light) {
+  .description { color: var(--muted-light); }
+}
 
 /* Disabled state (Coming soon) */
 .card.disabled {
-  opacity: 0.45;
-  filter: grayscale(20%);
+  opacity: 0.5;
+  filter: grayscale(15%);
   pointer-events: none;
   cursor: not-allowed;
   transform: none;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.14);
 }
 
 /* Badge */
 .badge {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  font-size: 12px;
-  padding: 4px 10px;
+  top: 10px;
+  right: 10px;
+  font-size: 11px;
+  padding: 3px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,.15);
-  background: rgba(107,114,128,.18);
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(107,114,128,0.22);
   color: inherit;
 }
 
-/* Ensure the section header stays readable */
-.block-container h1 { color: inherit; }
+/* Reduce any container bleed that can look like a white panel edge */
+.block-container { padding-top: 1.5rem; }
 
+/* Keep header centered */
+.block-container h1 { text-align: center; margin-bottom: 40px; }
 </style>
 """, unsafe_allow_html=True)
 
 
 def create_card(title: str, description: str, icon: str, app_name: str, *, disabled: bool = False, badge: str | None = None) -> str:
     classes = "card disabled" if disabled else "card"
+    badge_html = f'<div class="badge">{badge}</div>' if badge else ""
     if disabled:
-        # Not clickable; show a non-link wrapper
+        # Non-clickable
         return f"""
         <div class="card-link">
           <div class="{classes}">
-            {'<div class="badge">'+badge+'</div>' if badge else ""}
+            {badge_html}
             <div class="card-content">
                 <div class="icon">{icon}</div>
                 <div class="title">{title}</div>
@@ -136,24 +144,23 @@ def create_card(title: str, description: str, icon: str, app_name: str, *, disab
           </div>
         </div>
         """
-    else:
-        # Clickable via query param navigation
-        return f"""
-        <a class="card-link" href="?app={app_name}" target="_self" aria-label="Open {title}">
-          <div class="{classes}">
-            {'<div class="badge">'+badge+'</div>' if badge else ""}
-            <div class="card-content">
-                <div class="icon">{icon}</div>
-                <div class="title">{title}</div>
-                <div class="description">{description}</div>
-            </div>
-          </div>
-        </a>
-        """
+    # Clickable
+    return f"""
+    <a class="card-link" href="?app={app_name}" target="_self" aria-label="Open {title}">
+      <div class="{classes}">
+        {badge_html}
+        <div class="card-content">
+            <div class="icon">{icon}</div>
+            <div class="title">{title}</div>
+            <div class="description">{description}</div>
+        </div>
+      </div>
+    </a>
+    """
 
 
 def _get_selected_app():
-    # Handle Streamlit versions with either st.query_params or experimental_get_query_params
+    # Works across Streamlit versions
     app_val = None
     try:
         qp = st.query_params
@@ -189,14 +196,14 @@ def main():
         gaussian_main()
         return
 
-    # Hard-block navigation to GPC Graphing while it's under development
+    # Block GPC Graphing route if someone hand-types the URL
     if selected_app == "gpc_graphing":
         st.info("GPC Graphing is under development and will be available soon.", icon="🛠️")
         _back_to_launcher_button()
         return
 
     # Launcher UI
-    st.markdown("<h1 style='text-align: center; margin-bottom: 40px;'>Choose an Application</h1>", unsafe_allow_html=True)
+    st.markdown("### Choose an Application")
 
     col1, col2 = st.columns(2)
 
