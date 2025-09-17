@@ -272,11 +272,8 @@ def main():
             )
 
             # Display results
-            _, cent, _ = st.columns([.4, .2, .4])
-            with cent:
-                st.pyplot(fig, pi=600)
-            #st.pyplot(fig, dpi=600)
-            st.dataframe(table, use_container_width=True)
+            st.pyplot(fig, dpi=600, use_container_width=False)
+            st.dataframe(table, use_container_width=False)
 
         except Exception as e:
             st.error(f"Error processing files: {str(e)}")
