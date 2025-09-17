@@ -105,7 +105,7 @@ def main():
     st.markdown("<br><br>", unsafe_allow_html=True)
 
     # Check if an app has been selected
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params()
     if "app" in query_params:
         try:
             selected_app = base64.b64decode(query_params["app"][0]).decode()
