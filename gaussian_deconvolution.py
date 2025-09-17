@@ -253,6 +253,11 @@ else:
     if data_source == "Upload My Own Data":
         st.info("Upload both calibration and data files to begin.")
 
+# Add a back button to return to the launcher
+if st.button("← Back to Launcher"):
+    st.session_state.selected_app = None
+    st.rerun()
+
 def main():
     # All the existing code from the file should be placed here
     # This ensures it can be imported and called from the launcher
