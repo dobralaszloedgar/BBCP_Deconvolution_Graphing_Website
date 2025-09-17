@@ -26,7 +26,6 @@ def _set_page_meta(title: str, icon: str):
         st.set_page_config(
             page_title=title,
             page_icon=icon,
-            layout="centered",
             initial_sidebar_state="collapsed",
         )
     except Exception:
