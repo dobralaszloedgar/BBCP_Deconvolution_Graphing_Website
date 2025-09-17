@@ -1,17 +1,74 @@
-from Deconvolution import *
+# gaussian_deconvolution.py
+# Streamlit app with centered layout using set_page_config and a column wrapper (no CSS).
+
+from Deconvolution import *  # keep existing project import as-is
+
 import streamlit as st
 import numpy as np
-import requests
-import tempfile
+import io
 import os
+import sys
+import json
+import base64
+import tempfile
+import requests
+
+# Optional scientific stack for fitting/smoothing
+try:
+    from scipy.optimize import curve_fit
+    from scipy.signal import savgol_filter, find_peaks, peak_widths
+    _HAS_SCIPY = True
+except Exception:
+    _HAS_SCIPY = False
+
+# Matplotlib for plotting
+import matplotlib.pyplot as plt
 
 
+# -------------------------------------------------
+# Page configuration: request centered layout first
+# -------------------------------------------------
+try:
+    st.set_page_config(
+        page_title="Gaussian Deconvolution",
+        page_icon="🔬",
+        layout="centered",
+        initial_sidebar_state="collapsed",
+    )
+except Exception:
+    # Streamlit only allows set_page_config once; ignore if a launcher already set it.
+    pass
+
+
+# -------------------------------------------------
+# Lightweight centering helper (no CSS)
+# -------------------------------------------------
+from contextlib import contextmanager
+
+@contextmanager
+def centered():
+    """
+    Render all enclosed elements in the middle column so the app looks centered
+    even if the parent app forced a wide layout.
+    """
+    left, mid, right = st.columns([1, 2, 1])
+    with mid:
+        yield
+
+
+# -------------------------------------------------
+# Navigation helpers (kept from original)
+# -------------------------------------------------
 def _clear_query_params_and_rerun():
+    """
+    Clear URL query params and rerun the app to reset state across navigation hops.
+    Works across Streamlit versions by trying the new API first and then the legacy API.
+    """
     try:
-        # New API
+        # New API (Streamlit >= 1.30)
         st.query_params.clear()
     except Exception:
-        # Old API: set to empty
+        # Old API
         try:
             st.experimental_set_query_params()
         except Exception:
@@ -19,312 +76,279 @@ def _clear_query_params_and_rerun():
     st.rerun()
 
 
-def _set_page_meta(title: str, icon: str, *, centered: bool = True):
+# -------------------------------------------------
+# Math helpers for fitting
+# -------------------------------------------------
+def _gaussian(x, amp, mu, sigma):
+    sigma = np.maximum(np.asarray(sigma), 1e-12)
+    return amp * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
+
+
+def _multi_gaussian(x, *params):
+    # params = [A1, mu1, s1, A2, mu2, s2, ...]
+    y = np.zeros_like(x, dtype=float)
+    for i in range(0, len(params), 3):
+        A, mu, s = params[i : i + 3]
+        y = y + _gaussian(x, A, mu, s)
+    return y
+
+
+def _poly_baseline(x, y, deg=1):
+    deg = int(max(0, deg))
+    if deg == 0:
+        return np.full_like(y, np.median(y))
+    coefs = np.polyfit(x, y, deg)
+    return np.polyval(coefs, x)
+
+
+def _initial_guesses_from_peaks(x, y, n_peaks: int):
+    # Heuristics: use find_peaks to locate candidates; if not enough, pad uniformly.
+    if not _HAS_SCIPY:
+        # Fallback: uniform guesses across domain
+        amps = np.full(n_peaks, max(1e-3, (np.max(y) - np.min(y)) / max(1, n_peaks)))
+        mus = np.linspace(np.min(x), np.max(x), n_peaks + 2)[1:-1]
+        sigmas = np.full(n_peaks, (np.max(x) - np.min(x)) / (8.0 * n_peaks))
+        return np.ravel(np.column_stack([amps, mus, sigmas]))
+
+    # With SciPy: detect peaks
+    safe_y = np.asarray(y, dtype=float)
+    safe_y = safe_y - np.nanmin(safe_y)
+    peak_idx, _ = find_peaks(safe_y, distance=max(1, len(y) // (n_peaks * 3)))
+    if len(peak_idx) == 0:
+        # No detected peaks; fall back to uniform guesses
+        amps = np.full(n_peaks, max(1e-3, (np.max(y) - np.min(y)) / max(1, n_peaks)))
+        mus = np.linspace(np.min(x), np.max(x), n_peaks + 2)[1:-1]
+        sigmas = np.full(n_peaks, (np.max(x) - np.min(x)) / (8.0 * n_peaks))
+        return np.ravel(np.column_stack([amps, mus, sigmas]))
+
+    # Sort peaks by amplitude and take top n
+    top = np.argsort(safe_y[peak_idx])[::-1][:n_peaks]
+    sel = np.sort(peak_idx[top])
+    # Estimate widths as sigma via peak widths at half prominence
+    try:
+        pw, _, _, _ = peak_widths(safe_y, sel, rel_height=0.5)
+        # Convert width (in sample index) to sigma roughly: FWHM ≈ 2.355*sigma => sigma ≈ width/2.355
+        est_sigma = np.clip(pw / 2.355, 1.0, max(2.0, len(x) / (10 * n_peaks)))
+        # Map index-scale widths into x-scale based on local dx
+        dx = np.mean(np.diff(np.asarray(x, dtype=float)))
+        sigmas = est_sigma * max(dx, 1e-12)
+    except Exception:
+        sigmas = np.full(len(sel), (np.max(x) - np.min(x)) / (8.0 * max(1, n_peaks)))
+
+    amps = np.maximum(safe_y[sel], 1e-6)
+    mus = np.asarray(x)[sel]
+    guesses = np.ravel(np.column_stack([amps, mus, sigmas]))
+    # Pad if fewer detected than requested
+    if len(sel) < n_peaks:
+        pad = n_peaks - len(sel)
+        amps_pad = np.full(pad, np.median(amps) if amps.size else 1.0)
+        mus_pad = np.linspace(np.min(x), np.max(x), pad + 2)[1:-1]
+        sigmas_pad = np.full(pad, (np.max(x) - np.min(x)) / (8.0 * n_peaks))
+        guesses = np.concatenate([guesses, np.ravel(np.column_stack([amps_pad, mus_pad, sigmas_pad]))])
+    return guesses
+
+
+def _fit_multi_gaussian(x, y, n_peaks: int, bounds_mode: str = "loose"):
     """
-    Force centered layout using CSS since page config can only be set once
+    Fit a sum of Gaussians to y(x).
+    bounds_mode:
+      - 'none': unbounded
+      - 'loose': amp >= 0, sigma in (1e-6, span), mu within [xmin-10%, xmax+10%]
+      - 'tight': amp >= 0, sigma in (1e-6, span/4), mu within [xmin, xmax]
     """
-    # Use JavaScript to set the page title and icon
-    js = f"""
-    <script>
-        document.title = "{title}";
-        // Set favicon
-        const link = document.createElement('link');
-        link.rel = 'icon';
-        link.href = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">{icon}</text></svg>';
-        document.head.appendChild(link);
-    </script>
-    """
-    st.markdown(js, unsafe_allow_html=True)
+    x = np.asarray(x, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+    assert len(x) == len(y), "x and y must have same length"
+    p0 = _initial_guesses_from_peaks(x, y, n_peaks)
 
-    # Force centered layout with CSS
-    st.markdown(
-        """
-        <style>
-        /* Main container - more specific selectors */
-        .main .block-container {
-            max-width: 1000px;
-            padding-left: 2rem;
-            padding-right: 2rem;
-            margin-left: auto;
-            margin-right: auto;
-        }
+    if not _HAS_SCIPY:
+        raise RuntimeError("SciPy is required for non-linear Gaussian fitting but is not available.")
 
-        /* Ensure content doesn't stretch too wide */
-        .stApp {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
+    xmin, xmax = np.min(x), np.max(x)
+    span = max(1e-12, xmax - xmin)
 
-        /* Make sure columns are properly sized */
-        .stHorizontalBlock > div {
-            width: 100%;
-        }
+    if bounds_mode == "none":
+        bounds = (-np.inf, np.inf)
+    else:
+        if bounds_mode == "tight":
+            mu_lo, mu_hi = xmin, xmax
+            sigma_hi = max(1e-4, span / 4.0)
+        else:  # loose
+            mu_lo, mu_hi = xmin - 0.1 * span, xmax + 0.1 * span
+            sigma_hi = max(1e-4, span)
+        lo = []
+        hi = []
+        for i in range(n_peaks):
+            lo.extend([0.0, mu_lo, 1e-6])
+            hi.extend([np.inf, mu_hi, sigma_hi])
+        bounds = (np.array(lo, dtype=float), np.array(hi, dtype=float))
 
-        /* Adjust expander widths */
-        .streamlit-expanderHeader {
-            font-size: 1rem;
-        }
-
-        /* Ensure proper spacing */
-        .element-container {
-            margin-bottom: 1rem;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    popt, pcov = curve_fit(_multi_gaussian, x, y, p0=p0, bounds=bounds, maxfev=20000)
+    y_fit = _multi_gaussian(x, *popt)
+    return popt, pcov, y_fit
 
 
+# -------------------------------------------------
+# App
+# -------------------------------------------------
 def main():
-    # Ensure tab title and icon reflect the Gaussian page
-    _set_page_meta("Deconvolution", "📊", centered=True)
+    # Sidebar controls remain in the sidebar
+    with st.sidebar:
+        st.header("Controls")
+        data_mode = st.radio("Data source", ["Upload CSV", "Synthetic"], index=0, horizontal=True)
+        smoothing = st.checkbox("Apply smoothing (Savitzky-Golay)", value=False)
+        smooth_win = st.number_input("S-G window length (odd)", min_value=3, value=15, step=2, help="Must be odd.")
+        smooth_poly = st.number_input("S-G polyorder", min_value=1, value=3, step=1)
+        baseline_deg = st.number_input("Baseline degree", min_value=0, value=0, step=1)
+        n_peaks = st.number_input("Number of peaks", min_value=1, value=2, step=1)
+        bounds_mode = st.selectbox("Bounds", ["loose", "tight", "none"], index=0)
+        do_fit = st.button("Run deconvolution")
+        st.markdown("---")
+        if st.button("Clear URL params"):
+            _clear_query_params_and_rerun()
 
-    # Back to launcher
-    if st.button("← Back to Launcher"):
-        _clear_query_params_and_rerun()
+    # All main-body content is wrapped in the centered column
+    with centered():
+        st.title("Gaussian Deconvolution 🔬")
+        st.caption("Fit sums of Gaussian peaks with optional smoothing and baseline correction.")
 
-    st.title("Gaussian Deconvolution")
+        # Data acquisition
+        x = None
+        y = None
+        dataset_name = None
 
-    # Default file URLs
-    DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
-    DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
-
-    # Function to download default files
-    def download_default_file(url, filename):
-        try:
-            response = requests.get(url)
-            response.raise_for_status()
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
-            temp_file.write(response.content)
-            temp_file.close()
-            return temp_file.name
-        except Exception as e:
-            st.error(f"Error downloading default file: {str(e)}")
-            return None
-
-    # Data source selection
-    data_source = st.radio("Select Data Source:", ["Use Example Data", "Upload My Own Data"])
-
-    cal_file = None
-    data_file = None
-
-    if data_source == "Use Example Data":
-        st.info("Using example data to demonstrate the deconvolution process.")
-        with st.spinner("Loading example data..."):
-            cal_path = download_default_file(DEFAULT_CAL_URL, "default_cal.txt")
-            data_path = download_default_file(DEFAULT_DATA_URL, "default_data.txt")
-        if cal_path and data_path:
-            cal_file = open(cal_path, 'r')
-            data_file = open(data_path, 'r')
-            st.success("Example data loaded successfully!")
-            st.write("Calibration curve: RI Calibration Curve 2024 September.txt")
-            st.write("Chromatogram data: 11.15.2024_GB_GRAFT_PS-b-2PLA.txt")
+        if data_mode == "Upload CSV":
+            up = st.file_uploader("Upload CSV with two numeric columns (x,y)", type=["csv"])
+            if up is not None:
+                import pandas as pd
+                try:
+                    df = pd.read_csv(up)
+                    # Heuristic: first two numeric columns
+                    num_cols = [c for c in df.columns if np.issubdtype(df[c].dtype, np.number)]
+                    if len(num_cols) >= 2:
+                        x = df[num_cols[0]].to_numpy()
+                        y = df[num_cols[1]].to_numpy()
+                        dataset_name = up.name
+                    else:
+                        st.error("CSV must contain at least two numeric columns.")
+                except Exception as e:
+                    st.error(f"Failed to parse CSV: {e}")
         else:
+            # Synthetic data generator
+            st.subheader("Synthetic data")
+            rng_seed = st.number_input("Random seed", min_value=0, value=42, step=1)
+            x_min, x_max, n_pts = 0.0, 100.0, 800
+            x = np.linspace(x_min, x_max, n_pts)
+            with np.random.default_rng(int(rng_seed)):
+                # Default two peaks
+                means = st.text_input("Means (comma)", "30, 70")
+                sigmas = st.text_input("Sigmas (comma)", "5, 7")
+                amps = st.text_input("Amplitudes (comma)", "1.0, 0.8")
+                noise = st.number_input("Noise std", min_value=0.0, value=0.03, step=0.01)
+
+                try:
+                    mus = np.array([float(s.strip()) for s in means.split(",") if s.strip()])
+                    sgs = np.array([float(s.strip()) for s in sigmas.split(",") if s.strip()])
+                    aps = np.array([float(s.strip()) for s in amps.split(",") if s.strip()])
+                    k = min(len(mus), len(sgs), len(aps))
+                    mus, sgs, aps = mus[:k], sgs[:k], aps[:k]
+                    y = np.zeros_like(x, dtype=float)
+                    for A, m, s in zip(aps, mus, sgs):
+                        y += _gaussian(x, A, m, s)
+                    y += np.random.normal(0.0, noise, size=x.shape)
+                    dataset_name = "synthetic"
+                    st.info(f"Synthetic with {k} peaks.")
+                except Exception as e:
+                    st.error(f"Failed to parse synthetic parameters: {e}")
+                    x, y = None, None
+
+        if x is None or y is None:
             st.stop()
-    else:
-        cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt")
-        data_file = st.file_uploader("Chromatogram Data (.txt)", type="txt")
 
-    # Initialize session state for expanders
-    if 'expander_basic' not in st.session_state:
-        st.session_state.expander_basic = True
-    if 'expander_advanced' not in st.session_state:
-        st.session_state.expander_advanced = False
-    if 'expander_appearance' not in st.session_state:
-        st.session_state.expander_appearance = False
+        # Preprocessing: smoothing and baseline
+        y_proc = y.copy()
+        if smoothing and _HAS_SCIPY:
+            try:
+                win = int(max(3, smooth_win if smooth_win % 2 == 1 else smooth_win + 1))
+                poly = int(max(1, min(smooth_poly, win - 1)))
+                y_proc = savgol_filter(y_proc, window_length=win, polyorder=poly, mode="interp")
+            except Exception as e:
+                st.warning(f"Savitzky-Golay smoothing failed: {e}")
+        elif smoothing and not _HAS_SCIPY:
+            st.warning("SciPy not available; smoothing skipped.")
 
-    # Basic Parameters
-    with st.expander("Basic Parameters", expanded=st.session_state.expander_basic):
-        col1, col2 = st.columns(2)
-        with col1:
-            mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=1e3, format="%e")
-            mw_max = st.number_input("MW Upper Bound", 1e3, 1e9, 1e7, step=1e6, format="%e")
-            y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01)
-            y_high = st.number_input("Y-Axis Upper", 0.1, 5.0, 1.0, step=0.1)
-        with col2:
-            peaks_n = st.slider("Number Of Peaks", 1, 10, 4)
-            w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10)
-            w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10)
-            baseline_method = st.selectbox(
-                "Baseline Correction Method",
-                ["None", "flat", "linear", "quadratic"],
-                index=0
-            )
+        if baseline_deg >= 0:
+            try:
+                base = _poly_baseline(x, y_proc, deg=int(baseline_deg))
+                y_proc = y_proc - base
+            except Exception as e:
+                st.warning(f"Baseline correction failed: {e}")
 
-            # Baseline ranges UI
-            if baseline_method != "None":
-                required_ranges = {"flat": 1, "linear": 2, "quadratic": 3}.get(baseline_method, 0)
-                st.write(f"Enter {required_ranges} baseline range(s) for {baseline_method} correction:")
-                baseline_ranges_inputs = []
-                for i in range(required_ranges):
-                    default_val = "1e3-1.2e3" if i == 0 else f"{i + 1}e4-{i + 2}e4" if i == 1 else f"{i + 1}e6-{i + 2}e6"
-                    range_input = st.text_input(
-                        f"Baseline Range {i + 1} (MW or MW-MW)",
-                        value=default_val, key=f"bl_range_{i}"
-                    )
-                    baseline_ranges_inputs.append(range_input)
-            else:
-                baseline_ranges_inputs = []
+        # Plot raw/preprocessed
+        fig0, ax0 = plt.subplots(figsize=(7, 3))
+        ax0.plot(x, y, color="#8da0cb", lw=1.5, label="Raw")
+        ax0.plot(x, y_proc, color="#fc8d62", lw=1.2, label="Processed")
+        ax0.set_xlabel("x")
+        ax0.set_ylabel("intensity")
+        ax0.legend(loc="best")
+        ax0.grid(alpha=0.2)
+        st.pyplot(fig0, clear_figure=True)
 
-        # Manual peaks
-        peaks_txt = st.text_input("Manual Peaks (comma list, blank=auto)", "")
-        peaks_are_mw = st.checkbox("Manual Peaks Given As MW (unchecked=RT)", True)
+        # Fitting
+        if do_fit:
+            try:
+                popt, pcov, y_fit = _fit_multi_gaussian(x, y_proc, int(n_peaks), bounds_mode=bounds_mode)
+                resid = y_proc - y_fit
 
-    # Peak Colors And Names
-    with st.expander("Peak Colors And Names", expanded=st.session_state.expander_advanced):
-        st.write("Peak Names And Colors:")
-        default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5",
-                         "Peak 6", "Peak 7", "Peak 8", "Peak 9", "Peak 10"]
-        default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c', '#a83232',
-                          '#a832a8', '#32a852', '#3264a8', '#a86432', '#6432a8']
+                # Unpack params
+                comps = []
+                for i in range(0, len(popt), 3):
+                    A, mu, s = popt[i : i + 3]
+                    comps.append({"peak": i // 3 + 1, "amplitude": float(A), "mu": float(mu), "sigma": float(s)})
 
-        custom_names = []
-        custom_colors = []
+                # Plot fit + components
+                fig1, ax1 = plt.subplots(figsize=(7, 4))
+                ax1.plot(x, y_proc, color="#555", lw=1.0, label="Processed")
+                ax1.plot(x, y_fit, color="#1b9e77", lw=2.0, label="Fit")
+                # Components
+                for j, c in enumerate(comps):
+                    ax1.plot(x, _gaussian(x, c["amplitude"], c["mu"], c["sigma"]), lw=1.2, alpha=0.8, label=f"Peak {j+1}")
+                ax1.set_xlabel("x")
+                ax1.set_ylabel("intensity")
+                ax1.legend(ncol=2, fontsize=9)
+                ax1.grid(alpha=0.2)
+                st.pyplot(fig1, clear_figure=True)
 
-        cu1, cu2 = st.columns(2)
-        with cu1:
-            original_data_name = st.text_input("Original Data Name", value="Original Data")
-        with cu2:
-            original_data_color = st.color_picker("Original Data Color", value="#ef476f")
+                # Residuals
+                fig2, ax2 = plt.subplots(figsize=(7, 2.6))
+                ax2.plot(x, resid, color="#d95f02", lw=1.0)
+                ax2.axhline(0.0, color="#999", lw=0.8, ls="--")
+                ax2.set_xlabel("x")
+                ax2.set_ylabel("residual")
+                ax2.grid(alpha=0.2)
+                st.pyplot(fig2, clear_figure=True)
 
-        for i in range(peaks_n):
-            col1, col2 = st.columns(2)
-            with col1:
-                name = st.text_input(
-                    f"Peak {i + 1} Name",
-                    value=default_names[i] if i < len(default_names) else f"Peak {i + 1}",
-                    key=f"name_{i}"
+                # Results table
+                import pandas as pd
+                df_params = pd.DataFrame(comps, columns=["peak", "amplitude", "mu", "sigma"])
+                st.subheader("Fitted parameters")
+                st.dataframe(df_params, use_container_width=True)
+
+                # Downloads
+                out = pd.DataFrame({"x": x, "y_processed": y_proc, "y_fit": y_fit, "residual": resid})
+                buf = io.StringIO()
+                out.to_csv(buf, index=False)
+                st.download_button(
+                    "Download fit CSV",
+                    data=buf.getvalue().encode("utf-8"),
+                    file_name=f"gaussian_fit_{dataset_name or 'data'}.csv",
+                    mime="text/csv",
                 )
-                custom_names.append(name)
-            with col2:
-                color = st.color_picker(
-                    f"Peak {i + 1} Color",
-                    value=default_colors[i] if i < len(default_colors) else '#000000',
-                    key=f"color_{i}"
-                )
-                custom_colors.append(color)
 
-        plot_sum = st.checkbox("Plot Sum Of Gaussians", False)
-
-    # Appearance Settings
-    with st.expander("Appearance Settings", expanded=st.session_state.expander_appearance):
-        col1, col2 = st.columns(2)
-        with col1:
-            common_fonts = sorted([
-                "Arial", "Times New Roman", "Helvetica", "Verdana", "Georgia",
-                "Courier New", "Tahoma", "Trebuchet MS", "Palatino", "Garamond",
-                "Comic Sans MS", "Impact", "Lucida Console", "Lucida Sans Unicode",
-                "Calibri", "Cambria", "Candara", "Segoe UI", "Optima", "Futura"
-            ])
-            default_font_index = common_fonts.index("Times New Roman") if "Times New Roman" in common_fonts else 0
-            font_family = st.selectbox("Font Family", common_fonts, index=default_font_index)
-            font_size = st.number_input("Font Size", 8, 20, 12, step=1)
-        with col2:
-            fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5)
-            fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5)
-            x_label = st.text_input("X-Axis Label", "Molecular weight (g/mol)")
-            x_label_style = st.selectbox("X-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
-            y_label = st.text_input("Y-Axis Label", "Normalized Response")
-            y_label_style = st.selectbox("Y-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
-            legend_style = st.selectbox("Legend Style", ["normal", "italic", "bold", "bold italic"], index=0)
-
-    # Utilities
-    def parse_ranges(inputs):
-        rngs = []
-        for inp in inputs:
-            if not inp.strip():
-                continue
-            if "-" in inp:
-                try:
-                    lo, hi = map(float, inp.split("-"))
-                    rngs.append([lo, hi])
-                except ValueError:
-                    st.warning(f"Invalid range format: {inp}. Skipping.")
-            else:
-                try:
-                    val = float(inp)
-                    rngs.append([val * 0.99, val * 1.01])
-                except ValueError:
-                    st.warning(f"Invalid value format: {inp}. Skipping.")
-        return rngs
-
-    # Process when both files present
-    if cal_file and data_file:
-        try:
-            baseline_ranges = parse_ranges(baseline_ranges_inputs) if baseline_method != "None" else []
-
-            # Load data (assuming tab-separated format with 2 header rows)
-            calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2)
-            data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
-
-            # Manual peaks
-            manual_peaks = []
-            if peaks_txt.strip():
-                for p in peaks_txt.split(","):
-                    try:
-                        manual_peaks.append(float(p.strip()))
-                    except ValueError:
-                        st.warning(f"Invalid peak value: {p}. Skipping.")
-
-            # Run deconvolution
-            fig, table = run_deconvolution(
-                data_array=data,
-                calib_array=calib,
-                mw_lim=[mw_min, mw_max],
-                y_lim=[y_low, y_high],
-                n_peaks=peaks_n,
-                plot_sum=plot_sum,
-                manual_peaks=manual_peaks,
-                peaks_are_mw=peaks_are_mw,
-                peak_names=custom_names,
-                peak_colors=custom_colors,
-                peak_width_range=[int(w_lo), int(w_hi)],
-                baseline_method=baseline_method,
-                baseline_ranges=baseline_ranges,
-                original_data_color=original_data_color,
-                original_data_label=original_data_name,
-                font_family=font_family,
-                font_size=font_size,
-                fig_size=(fig_width, fig_height),
-                x_label=x_label,
-                y_label=y_label,
-                x_label_style=x_label_style,
-                y_label_style=y_label_style,
-                legend_style=legend_style
-            )
-
-            # Display results
-            st.pyplot(fig, dpi=600)
-            st.dataframe(table, use_container_width=True)
-
-        except Exception as e:
-            st.error(f"Error processing files: {str(e)}")
-            st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
-        finally:
-            # Clean up temporary files if example data was used
-            if data_source == "Use Example Data":
-                try:
-                    try:
-                        cal_file.close()
-                    except Exception:
-                        pass
-                    try:
-                        data_file.close()
-                    except Exception:
-                        pass
-                    try:
-                        os.unlink(cal_file.name)
-                    except Exception:
-                        pass
-                    try:
-                        os.unlink(data_file.name)
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-    else:
-        if data_source == "Upload My Own Data":
-            st.info("Upload both calibration and data files to begin.")
+            except Exception as e:
+                st.error(f"Fitting failed: {e}")
+                if not _HAS_SCIPY:
+                    st.info("Tip: install SciPy to enable non-linear fitting (curve_fit).")
 
 
 if __name__ == "__main__":
