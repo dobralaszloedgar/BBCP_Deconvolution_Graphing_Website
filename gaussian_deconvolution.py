@@ -272,7 +272,10 @@ def main():
             )
 
             # Display results
-            st.pyplot(fig, dpi=600)
+            _, cent, _ = st.columns([.4, .2, .4])
+            with cent:
+                st.pyplot(fig, pi=600)
+            #st.pyplot(fig, dpi=600)
             st.dataframe(table, use_container_width=True)
 
         except Exception as e:
