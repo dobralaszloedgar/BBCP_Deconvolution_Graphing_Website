@@ -5,6 +5,7 @@ import requests
 import tempfile
 import os
 
+
 def _clear_query_params_and_rerun():
     try:
         # New API
@@ -16,6 +17,7 @@ def _clear_query_params_and_rerun():
         except Exception:
             pass
     st.rerun()
+
 
 def _set_page_meta(title: str, icon: str):
     """
@@ -52,10 +54,10 @@ def _set_page_meta(title: str, icon: str):
         """
         st.markdown(js, unsafe_allow_html=True)
 
+
 def main():
     # Ensure tab title and icon reflect the Gaussian page
     _set_page_meta("Deconvolution", "📊")
-
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -271,9 +273,22 @@ def main():
                 legend_style=legend_style
             )
 
-            # Display results
+            # Display results with smaller sizes
             st.pyplot(fig, dpi=600, use_container_width=False)
-            st.dataframe(table, use_container_width=False)
+
+            # Add CSS to make the table smaller
+            st.markdown(
+                """
+                <style>
+                .stDataFrame {
+                    width: 50% !important;
+                    margin: 0 auto;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
+            st.dataframe(table, use_container_width=True)
 
         except Exception as e:
             st.error(f"Error processing files: {str(e)}")
@@ -303,6 +318,7 @@ def main():
     else:
         if data_source == "Upload My Own Data":
             st.info("Upload both calibration and data files to begin.")
+
 
 if __name__ == "__main__":
     main()
