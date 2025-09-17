@@ -265,7 +265,7 @@ def run_deconvolution(
         peak_colors = peak_colors[:len(best_fit)]
 
     # Create the plot
-    fig, ax = plt.subplots(figsize=fig_size/1.2)
+    fig, ax = plt.subplots(figsize=fig_size/1.5)
 
     # Plot original data
     ax.plot(x_mw, y_corrected, label=original_data_label, linewidth=2, color=original_data_color)
