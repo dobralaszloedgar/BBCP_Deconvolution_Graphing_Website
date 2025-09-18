@@ -1,401 +1,309 @@
-# gaussian_deconvolution.py
-from __future__ import annotations
-
-import io
-import time
-import hashlib
-from datetime import datetime
-from typing import List, Tuple, Optional
-
-import numpy as np
-import pandas as pd
+from Deconvolution import *
 import streamlit as st
+import numpy as np
+import requests
+import tempfile
+import os
 
-# Optional autorefresh dependency with safe fallback
-try:
-    from streamlit_autorefresh import st_autorefresh  # pip install streamlit-autorefresh
-    _AUTOREFRESH_AVAILABLE = True
-except Exception:
-    _AUTOREFRESH_AVAILABLE = False
-
-# Import the deconvolution engine and flag from the shared module
-from Deconvolution import run_deconvolution, PYBASELINES_AVAILABLE  # noqa: E402
-
-
-# ----------------------------- Utilities ----------------------------- #
-
-def _read_table_file(uploaded) -> Optional[np.ndarray]:
-    """
-    Read a two-column numeric file (CSV/TSV/whitespace).
-    Returns np.ndarray of shape (N, 2) or None if not available/parsable.
-    """
-    if uploaded is None:
-        return None
-    content = uploaded.read()
-    uploaded.seek(0)
-    buf = io.BytesIO(content)
-    # Try several separators
-    for sep in (None, r"\s+", ",", "\t"):
+def _clear_query_params_and_rerun():
+    try:
+        # New API
+        st.query_params.clear()
+    except Exception:
+        # Old API: set to empty
         try:
-            buf.seek(0)
-            df = pd.read_csv(buf, sep=sep, engine="python", header=None, comment="#")
-            if df.shape[1] >= 2:
-                arr = df.iloc[:, :2].to_numpy(dtype=float)
-                return arr
-        except Exception:
-            continue
-    return None
-
-
-def _parse_float_list(text: str) -> List[float]:
-    if not text:
-        return []
-    vals: List[float] = []
-    for chunk in text.replace(";", ",").split(","):
-        s = chunk.strip()
-        if not s:
-            continue
-        try:
-            vals.append(float(s))
+            st.experimental_set_query_params()
         except Exception:
             pass
-    return vals
+    st.rerun()
 
-
-def _config_signature(**kwargs) -> str:
+def _set_page_meta(title: str, icon: str):
     """
-    Build a deterministic, order-stable signature of the current config to detect changes.
-    Handles nested dicts/lists/tuples/sets, bytes, and NumPy-like arrays without
-    hashing entire large buffers (uses shape/dtype and head/tail sampling).
+    Try to set page config. If the launcher already called set_page_config,
+    fall back to JS to update the tab title and favicon dynamically.
     """
-    import hashlib
-
-    def _to_bytes(obj) -> bytes:
-        # Primitives and direct bytes
-        if obj is None:
-            return b'null'
-        if isinstance(obj, (bytes, bytearray, memoryview)):
-            return bytes(obj)
-        if isinstance(obj, (str, int, bool)):
-            return repr(obj).encode("utf-8")
-        if isinstance(obj, float):
-            # Normalize -0.0 and ensure stable textual form
-            if obj == 0.0:
-                obj = 0.0
-            return repr(float(obj)).encode("utf-8")
-
-        # NumPy-like arrays (duck-typed)
-        if hasattr(obj, "dtype") and hasattr(obj, "shape") and hasattr(obj, "tobytes"):
-            try:
-                h = hashlib.sha256()
-                h.update(repr(getattr(obj, "shape", None)).encode("utf-8"))
-                h.update(repr(getattr(obj, "dtype", None)).encode("utf-8"))
-                # Try zero-copy bytes view
-                try:
-                    mv = memoryview(obj).cast("B")
-                    total = len(mv)
-                    if total <= 256:
-                        h.update(mv.tobytes())
-                    else:
-                        h.update(mv[:128].tobytes())
-                        h.update(mv[-128:].tobytes())
-                except Exception:
-                    bb = obj.tobytes()
-                    if len(bb) <= 256:
-                        h.update(bb)
-                    else:
-                        h.update(bb[:128])
-                        h.update(bb[-128:])
-                return h.digest()
-            except Exception:
-                return repr(obj).encode("utf-8")
-
-        # Mappings (sorted by key repr for determinism)
-        if isinstance(obj, dict):
-            h = hashlib.sha256()
-            h.update(b"{")
-            for i, key in enumerate(sorted(obj.keys(), key=lambda x: repr(x))):
-                if i:
-                    h.update(b",")
-                h.update(_to_bytes(key))
-                h.update(b":")
-                h.update(_to_bytes(obj[key]))
-            h.update(b"}")
-            return h.digest()
-
-        # Sets/frozensets (order-independent via sorting of item digests)
-        if isinstance(obj, (set, frozenset)):
-            item_bytes = sorted((_to_bytes(x) for x in obj))
-            h = hashlib.sha256()
-            h.update(b"(")
-            for i, bts in enumerate(item_bytes):
-                if i:
-                    h.update(b",")
-                h.update(bts)
-            h.update(b")")
-            return h.digest()
-
-        # Sequences
-        if isinstance(obj, (list, tuple)):
-            h = hashlib.sha256()
-            h.update(b"[" if isinstance(obj, list) else b"(")
-            for i, item in enumerate(obj):
-                if i:
-                    h.update(b",")
-                h.update(_to_bytes(item))
-            h.update(b"]" if isinstance(obj, list) else b")")
-            return h.digest()
-
-        # Fallback
-        return repr(obj).encode("utf-8")
-
-    m = hashlib.sha256()
-    for k in sorted(kwargs.keys(), key=lambda x: repr(x)):
-        m.update(_to_bytes(k))
-        m.update(b"=")
-        m.update(_to_bytes(kwargs[k]))
-        m.update(b";")
-    return m.hexdigest()
-
-
-
-def _auto_refresh_every(ms: int, key: str = "autorefresh_tick"):
-    """
-    Trigger reruns every ms milliseconds.
-    Uses streamlit-autorefresh if available, else a minimal JS fallback.
-    """
-    if _AUTOREFRESH_AVAILABLE:
-        st_autorefresh(interval=ms, debounce=True, key=key)
-    else:
-        # Fallback: simple JS reload (no debounce)
-        st.markdown(
-            f"<script>setTimeout(function(){{window.location.reload();}}, {ms});</script>",
-            unsafe_allow_html=True,
+    try:
+        st.set_page_config(
+            page_title=title,
+            page_icon=icon,
+            initial_sidebar_state="collapsed",
         )
-
-
-# ------------------------------- App --------------------------------- #
+    except Exception:
+        # Fallback: update title + favicon via a tiny script (works when page_config already set)
+        emoji = icon
+        js = f"""
+        <script>
+        (function() {{
+            const setTitle = (t) => {{ document.title = t; }};
+            const setFavicon = (emoji) => {{
+                const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>
+                               <text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='52'>{emoji}</text>
+                             </svg>`;
+                const url = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
+                let link = document.querySelector("link[rel='icon']") || document.createElement('link');
+                link.setAttribute('rel', 'icon');
+                link.setAttribute('href', url);
+                document.head.appendChild(link);
+            }};
+            setTitle("{title}");
+            setFavicon("{emoji}");
+        }})();
+        </script>
+        """
+        st.markdown(js, unsafe_allow_html=True)
 
 def main():
-    # Do NOT call st.set_page_config here; the launcher already sets it.
+    # Ensure tab title and icon reflect the Gaussian page
+    _set_page_meta("Deconvolution", "📊")
+
+
+    # Back to launcher
+    if st.button("← Back to Launcher"):
+        _clear_query_params_and_rerun()
+
     st.title("Gaussian Deconvolution")
 
-    # Periodic rerun every 3 seconds, with debounce when available
-    _auto_refresh_every(3000, key="gauss_autorefresh")
+    # Default file URLs
+    DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
+    DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
 
-    # Session state for throttling and change detection
-    if "lastupdatetime" not in st.session_state:
-        st.session_state.lastupdatetime = 0.0
-    if "config_sig" not in st.session_state:
-        st.session_state.config_sig = ""
+    # Function to download default files
+    def download_default_file(url, filename):
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+            temp_file.write(response.content)
+            temp_file.close()
+            return temp_file.name
+        except Exception as e:
+            st.error(f"Error downloading default file: {str(e)}")
+            return None
 
-    # --------------------------- Sidebar --------------------------- #
-    with st.sidebar:
-        st.header("Data")
-        data_file = st.file_uploader("Upload data (two columns: x, y)", type=["csv", "tsv", "txt"])
-        calib_file = st.file_uploader("Upload calibration (RT, log10(MW))", type=["csv", "tsv", "txt"])
+    # Data source selection
+    data_source = st.radio("Select Data Source:", ["Use Example Data", "Upload My Own Data"])
 
-        st.header("X-axis")
-        x_axis_type = st.radio("X axis type", options=["MW", "RT"], index=0, horizontal=True)
+    cal_file = None
+    data_file = None
 
-        if x_axis_type == "MW":
-            x_min = st.number_input("MW min (g/mol)", value=1e3, format="%.6g")
-            x_max = st.number_input("MW max (g/mol)", value=1e7, format="%.6g")
-            x_lim = [float(x_min), float(x_max)]
-            x_label_preview = "MW"
+    if data_source == "Use Example Data":
+        st.info("Using example data to demonstrate the deconvolution process.")
+        with st.spinner("Loading example data..."):
+            cal_path = download_default_file(DEFAULT_CAL_URL, "default_cal.txt")
+            data_path = download_default_file(DEFAULT_DATA_URL, "default_data.txt")
+        if cal_path and data_path:
+            cal_file = open(cal_path, 'r')
+            data_file = open(data_path, 'r')
+            st.success("Example data loaded successfully!")
+            st.write("Calibration curve: RI Calibration Curve 2024 September.txt")
+            st.write("Chromatogram data: 11.15.2024_GB_GRAFT_PS-b-2PLA.txt")
         else:
-            x_min = st.number_input("RT min (min)", value=0.0)
-            x_max = st.number_input("RT max (min)", value=30.0)
-            x_lim = [float(x_min), float(x_max)]
-            x_label_preview = "RT"
+            st.stop()
+    else:
+        cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt")
+        data_file = st.file_uploader("Chromatogram Data (.txt)", type="txt")
 
-        st.header("Y-axis")
-        y_min = st.number_input("Y min", value=-0.02)
-        y_max = st.number_input("Y max", value=1.0)
-        y_lim = [float(y_min), float(y_max)]
+    # Initialize session state for expanders
+    if 'expander_basic' not in st.session_state:
+        st.session_state.expander_basic = False
+    if 'expander_advanced' not in st.session_state:
+        st.session_state.expander_advanced = False
+    if 'expander_appearance' not in st.session_state:
+        st.session_state.expander_appearance = False
 
-        st.header("Peaks")
-        n_peaks = int(st.number_input("Number of peaks", min_value=1, max_value=12, value=4, step=1))
-        plot_sum = st.checkbox("Plot sum of Gaussians", value=False)
+    # Basic Parameters
+    with st.expander("Basic Parameters", expanded=st.session_state.expander_basic):
+        col1, col2 = st.columns(2)
+        with col1:
+            mw_min=1e3
+            mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=np.floor(np.log10(mw_min)), format="%e")
+            mw_max = st.number_input("MW Upper Bound", 1e3, 1e10, 1e7, step=1e6, format="%e")
+            y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01)
+            y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01)
+        with col2:
+            peaks_n = st.slider("Number Of Peaks", 1, 10, 4)
+            w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10)
+            w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10)
+            baseline_method = st.selectbox(
+                "Baseline Correction Method",
+                ["None", "arpls", "flat", "linear", "quadratic"],
+                index=0
+            )
 
-        manual_peaks_raw = st.text_input(f"Manual peaks ({x_label_preview}, comma/semicolon separated)", value="")
-        manual_peaks = _parse_float_list(manual_peaks_raw)
-        peaks_are_mw = st.checkbox("Manual peaks are MW values (if MW mode)", value=True)
-
-        # Names and colors
-        default_names = [f"Peak {i+1}" for i in range(n_peaks)]
-        peak_names_text = st.text_input("Peak names (comma separated)", value=", ".join(default_names))
-        peak_names = [s.strip() for s in peak_names_text.split(",") if s.strip()]
-        if len(peak_names) < n_peaks:
-            peak_names += [f"Peak {i+1}" for i in range(len(peak_names), n_peaks)]
-        if len(peak_names) > n_peaks:
-            peak_names = peak_names[:n_peaks]
-
-        st.markdown("Colors (hex)")
-        default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c',
-                          '#a83232', '#a832a8', '#32a852', '#3264a8',
-                          '#a86432', '#6432a8', '#2ca02c', '#d62728']
-        peak_colors: List[str] = []
-        for i in range(n_peaks):
-            col = st.text_input(f"Color for {peak_names[i]}", value=default_colors[i % len(default_colors)], key=f"col_{i}")
-            peak_colors.append(col)
-
-        st.header("Peak width search")
-        c1, c2 = st.columns(2)
-        with c1:
-            wmin = int(st.number_input("Width min (index)", value=100, min_value=10, step=10))
-        with c2:
-            wmax = int(st.number_input("Width max (index)", value=400, min_value=wmin+1, step=10))
-        peak_width_range = [wmin, wmax]
-
-        st.header("Baseline")
-        baseline_options = ["None", "flat", "linear", "quadratic"]
-        if PYBASELINES_AVAILABLE:
-            baseline_options.append("arpls")
-        baseline_method = st.selectbox("Method", options=baseline_options, index=0)
-
-        required_ranges = {"None": 0, "flat": 1, "linear": 2, "quadratic": 3, "arpls": 0}[baseline_method]
-        baseline_ranges: List[Tuple[float, float]] = []
-        for i in range(required_ranges):
-            c1, c2 = st.columns(2)
-            with c1:
-                xmin = st.number_input(f"Baseline range {i+1} min ({x_label_preview})", value=0.0, key=f"bl_min_{i}")
-            with c2:
-                xmax = st.number_input(f"Baseline range {i+1} max ({x_label_preview})", value=1.0, key=f"bl_max_{i}")
-            if xmax < xmin:
-                xmin, xmax = xmax, xmin
-            baseline_ranges.append((float(xmin), float(xmax)))
-
-        st.header("Styles")
-        original_data_label = st.text_input("Original data label", value="Original Data")
-        original_data_color = st.text_input("Original data color (hex)", value="#ef476f")
-        font_family = st.text_input("Font family", value="Times New Roman")
-        font_size = int(st.number_input("Font size", value=12, min_value=6, max_value=48))
-        fig_w = float(st.number_input("Figure width (in)", value=8.0, step=0.5))
-        fig_h = float(st.number_input("Figure height (in)", value=5.0, step=0.5))
-        fig_size = (fig_w, fig_h)
-
-        x_label_text = st.text_input("X label (leave blank for default)", value="")
-        y_label_text = st.text_input("Y label", value="Normalized Response")
-        x_label_style = st.selectbox("X label style", ["normal", "italic", "bold", "italic+bold"], index=0)
-        y_label_style = st.selectbox("Y label style", ["normal", "italic", "bold", "italic+bold"], index=0)
-        legend_style = st.selectbox("Legend style", ["normal", "italic", "bold", "italic+bold"], index=0)
-
-    # --------------------------- Main area --------------------------- #
-    left, right = st.columns([3, 2])
-
-    with left:
-        st.subheader("Inputs")
-        data_arr = _read_table_file(data_file)
-        if data_arr is not None:
-            st.write(f"Data points: {data_arr.shape[0]} rows")
-        else:
-            st.info("Upload a two-column data file to begin.")
-        calib_arr = _read_table_file(calib_file)
-
-        if x_axis_type == "MW" and calib_arr is None:
-            st.warning("MW mode selected: provide calibration (RT, log10(MW)) to compute MW axis.")
-
-    with right:
-        st.subheader("Status")
-
-        # Build a signature of inputs; triggers ASAP render on change
-        sig = _config_signature(
-            data_hash=("none" if data_arr is None else str(data_arr.shape) + str(data_arr[:2].tolist())),
-            calib_hash=("none" if calib_arr is None else str(calib_arr.shape) + str(calib_arr[:2].tolist())),
-            x_axis_type=x_axis_type,
-            x_lim=x_lim,
-            y_lim=y_lim,
-            n_peaks=n_peaks,
-            plot_sum=plot_sum,
-            manual_peaks=tuple(manual_peaks),
-            peaks_are_mw=peaks_are_mw,
-            peak_names=tuple(peak_names),
-            peak_colors=tuple(peak_colors),
-            peak_width_range=tuple(peak_width_range),
-            baseline_method=baseline_method,
-            baseline_ranges=tuple(tuple(r) for r in baseline_ranges),
-            original_data_label=original_data_label,
-            original_data_color=original_data_color,
-            font_family=font_family,
-            font_size=font_size,
-            fig_size=fig_size,
-            x_label_text=x_label_text,
-            y_label_text=y_label_text,
-            x_label_style=x_label_style,
-            y_label_style=y_label_style,
-            legend_style=legend_style,
-        )
-
-        # If configuration changed, force an ASAP render (reset throttle)
-        if sig != st.session_state.config_sig:
-            st.session_state.config_sig = sig
-            st.session_state.lastupdatetime = 0.0
-
-        now = time.time()
-        last = float(st.session_state.lastupdatetime or 0.0)
-        should_update = (last == 0.0) or ((now - last) >= 3.0)
-
-        if should_update and data_arr is not None and (x_axis_type == "RT" or calib_arr is not None):
-            try:
-                fig, results_df = run_deconvolution(
-                    data_array=data_arr,
-                    calib_array=calib_arr,
-                    x_axis_type=x_axis_type,
-                    x_lim=x_lim,
-                    y_lim=y_lim,
-                    n_peaks=n_peaks,
-                    plot_sum=plot_sum,
-                    manual_peaks=manual_peaks,
-                    peaks_are_mw=peaks_are_mw,
-                    peak_names=peak_names,
-                    peak_colors=peak_colors,
-                    peak_width_range=[int(peak_width_range[0]), int(peak_width_range[1])],
-                    baseline_method=baseline_method,
-                    baseline_ranges=baseline_ranges,
-                    original_data_color=original_data_color,
-                    original_data_label=original_data_label,
-                    font_family=font_family,
-                    font_size=font_size,
-                    fig_size=fig_size,
-                    x_label=x_label_text,
-                    y_label=y_label_text,
-                    x_label_style=x_label_style,
-                    y_label_style=y_label_style,
-                    legend_style=legend_style,
-                )
-
-                st.session_state.lastupdatetime = now
-
-                st.subheader("Deconvolution Plot")
-                st.pyplot(fig, clear_figure=True)
-
-                st.subheader("Results")
-                st.dataframe(results_df, use_container_width=True)
-
-                if results_df is not None and len(results_df) > 0:
-                    csv_bytes = results_df.to_csv(index=False).encode()
-                    st.download_button(
-                        "Download results CSV",
-                        data=csv_bytes,
-                        file_name=f"deconvolution_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv",
+            # Baseline ranges UI - only show for flat, linear, quadratic method
+            if baseline_method not in ["None", "arpls"]:
+                required_ranges = {"flat": 1, "linear": 2, "quadratic": 3}.get(baseline_method, 0)
+                st.write(f"Enter {required_ranges} baseline range(s) for {baseline_method} correction:")
+                baseline_ranges_inputs = []
+                for i in range(required_ranges):
+                    default_val = "1e3-1.2e3" if i == 0 else f"{i + 1}e4-{i + 2}e4" if i == 1 else f"{i + 1}e6-{i + 2}e6"
+                    range_input = st.text_input(
+                        f"Baseline Range {i + 1} (MW or MW-MW)",
+                        value=default_val, key=f"bl_range_{i}"
                     )
-
-            except Exception as e:
-                st.error(f"Deconvolution error: {e}")
-
-        else:
-            if data_arr is None:
-                st.info("Waiting for data upload...")
-            elif x_axis_type == "MW" and calib_arr is None:
-                st.info("Waiting for calibration for MW mode...")
+                    baseline_ranges_inputs.append(range_input)
             else:
-                remaining = max(0.0, 3.0 - (now - last)) if last > 0.0 else 0.0
-                st.caption(f"Next auto-update in {remaining:.1f} s")
+                baseline_ranges_inputs = []
 
-    st.caption("Auto-updates every 3 seconds; heavy redraw is throttled to timer ticks to avoid re-rendering after each change.")
+        # Manual peaks
+        peaks_txt = st.text_input("Manual Peaks (comma list, blank=auto)", "")
+        peaks_are_mw = st.checkbox("Manual Peaks Given As MW (unchecked=RT)", True)
 
+    # Peak Colors And Names
+    with st.expander("Peak Colors And Names", expanded=st.session_state.expander_advanced):
+        st.write("Peak Names And Colors:")
+        default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5",
+                         "Peak 6", "Peak 7", "Peak 8", "Peak 9", "Peak 10"]
+        default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c', '#a83232',
+                          '#a832a8', '#32a852', '#3264a8', '#a86432', '#6432a8']
+
+        custom_names = []
+        custom_colors = []
+
+        cu1, cu2 = st.columns(2)
+        with cu1:
+            original_data_name = st.text_input("Original Data Name", value="Original Data")
+        with cu2:
+            original_data_color = st.color_picker("Original Data Color", value="#ef476f")
+
+        for i in range(peaks_n):
+            col1, col2 = st.columns(2)
+            with col1:
+                name = st.text_input(
+                    f"Peak {i + 1} Name",
+                    value=default_names[i] if i < len(default_names) else f"Peak {i + 1}",
+                    key=f"name_{i}"
+                )
+                custom_names.append(name)
+            with col2:
+                color = st.color_picker(
+                    f"Peak {i + 1} Color",
+                    value=default_colors[i] if i < len(default_colors) else '#000000',
+                    key=f"color_{i}"
+                )
+                custom_colors.append(color)
+
+        plot_sum = st.checkbox("Plot Sum Of Gaussians", False)
+
+    # Appearance Settings
+    with st.expander("Appearance Settings", expanded=st.session_state.expander_appearance):
+        col1, col2 = st.columns(2)
+        with col1:
+            common_fonts = sorted([
+                "Arial", "Times New Roman", "Helvetica", "Verdana", "Georgia",
+                "Courier New", "Tahoma", "Trebuchet MS", "Palatino", "Garamond",
+                "Comic Sans MS", "Impact", "Lucida Console", "Lucida Sans Unicode",
+                "Calibri", "Cambria", "Candara", "Segoe UI", "Optima", "Futura"
+            ])
+            default_font_index = common_fonts.index("Times New Roman") if "Times New Roman" in common_fonts else 0
+            font_family = st.selectbox("Font Family", common_fonts, index=default_font_index)
+            font_size = st.number_input("Font Size", 8, 20, 12, step=1)
+        with col2:
+            fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5)
+            fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5)
+            x_label = st.text_input("X-Axis Label", "Molecular weight (g/mol)")
+            x_label_style = st.selectbox("X-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
+            y_label = st.text_input("Y-Axis Label", "Normalized Response")
+            y_label_style = st.selectbox("Y-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
+            legend_style = st.selectbox("Legend Style", ["normal", "italic", "bold", "bold italic"], index=0)
+
+    # Utilities
+    def parse_ranges(inputs):
+        rngs = []
+        for inp in inputs:
+            if not inp.strip():
+                continue
+            if "-" in inp:
+                try:
+                    lo, hi = map(float, inp.split("-"))
+                    rngs.append([lo, hi])
+                except ValueError:
+                    st.warning(f"Invalid range format: {inp}. Skipping.")
+            else:
+                try:
+                    val = float(inp)
+                    rngs.append([val * 0.99, val * 1.01])
+                except ValueError:
+                    st.warning(f"Invalid value format: {inp}. Skipping.")
+        return rngs
+
+    # Process when both files present
+    if cal_file and data_file:
+        try:
+            baseline_ranges = parse_ranges(baseline_ranges_inputs) if baseline_method not in ["None", "arpls"] else []
+
+            # Load data (assuming tab-separated format with 2 header rows)
+            calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2)
+            data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
+
+            # Manual peaks
+            manual_peaks = []
+            if peaks_txt.strip():
+                for p in peaks_txt.split(","):
+                    try:
+                        manual_peaks.append(float(p.strip()))
+                    except ValueError:
+                        st.warning(f"Invalid peak value: {p}. Skipping.")
+
+            # Run deconvolution
+            fig, table = run_deconvolution(
+                data_array=data,
+                calib_array=calib,
+                mw_lim=[mw_min, mw_max],
+                y_lim=[y_low, y_high],
+                n_peaks=peaks_n,
+                plot_sum=plot_sum,
+                manual_peaks=manual_peaks,
+                peaks_are_mw=peaks_are_mw,
+                peak_names=custom_names,
+                peak_colors=custom_colors,
+                peak_width_range=[int(w_lo), int(w_hi)],
+                baseline_method=baseline_method,
+                baseline_ranges=baseline_ranges,
+                original_data_color=original_data_color,
+                original_data_label=original_data_name,
+                font_family=font_family,
+                font_size=font_size,
+                fig_size=(fig_width, fig_height),
+                x_label=x_label,
+                y_label=y_label,
+                x_label_style=x_label_style,
+                y_label_style=y_label_style,
+                legend_style=legend_style
+            )
+
+            # Display results
+            st.pyplot(fig, dpi=600, width="content")
+            st.dataframe(table, width="content")
+
+        except Exception as e:
+            st.error(f"Error processing files: {str(e)}")
+            st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
+        finally:
+            # Clean up temporary files if example data was used
+            if data_source == "Use Example Data":
+                try:
+                    try:
+                        cal_file.close()
+                    except Exception:
+                        pass
+                    try:
+                        data_file.close()
+                    except Exception:
+                        pass
+                    try:
+                        os.unlink(cal_file.name)
+                    except Exception:
+                        pass
+                    try:
+                        os.unlink(data_file.name)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+    else:
+        if data_source == "Upload My Own Data":
+            st.info("Upload both calibration and data files to begin.")
 
 if __name__ == "__main__":
     main()
