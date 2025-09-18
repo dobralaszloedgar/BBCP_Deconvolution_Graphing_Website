@@ -14,12 +14,11 @@ import streamlit as st
 # Optional autorefresh dependency with safe fallback
 try:
     from streamlit_autorefresh import st_autorefresh  # pip install streamlit-autorefresh
-
     _AUTOREFRESH_AVAILABLE = True
 except Exception:
     _AUTOREFRESH_AVAILABLE = False
 
-# Import the deconvolution engine and flag
+# Import the deconvolution engine and flag from the shared module
 from Deconvolution import run_deconvolution, PYBASELINES_AVAILABLE  # noqa: E402
 
 
@@ -64,14 +63,17 @@ def _parse_float_list(text: str) -> List[float]:
 
 
 def _config_signature(**kwargs) -> str:
-    # Create a deterministic small signature to detect changes
+    """
+    Build a small deterministic signature of the current config to detect changes.
+    """
     m = hashlib.sha256()
     for k in sorted(kwargs.keys()):
         v = kwargs[k]
         if isinstance(v, (list, tuple)):
             m.update(str((k, tuple(v))).encode())
         else:
-            m.update(str((k, v))).encode()
+            # Corrected: encode BEFORE update, not after
+            m.update(str((k, v)).encode())
     return m.hexdigest()
 
 
@@ -139,11 +141,11 @@ def main():
         peaks_are_mw = st.checkbox("Manual peaks are MW values (if MW mode)", value=True)
 
         # Names and colors
-        default_names = [f"Peak {i + 1}" for i in range(n_peaks)]
+        default_names = [f"Peak {i+1}" for i in range(n_peaks)]
         peak_names_text = st.text_input("Peak names (comma separated)", value=", ".join(default_names))
         peak_names = [s.strip() for s in peak_names_text.split(",") if s.strip()]
         if len(peak_names) < n_peaks:
-            peak_names += [f"Peak {i + 1}" for i in range(len(peak_names), n_peaks)]
+            peak_names += [f"Peak {i+1}" for i in range(len(peak_names), n_peaks)]
         if len(peak_names) > n_peaks:
             peak_names = peak_names[:n_peaks]
 
@@ -153,8 +155,7 @@ def main():
                           '#a86432', '#6432a8', '#2ca02c', '#d62728']
         peak_colors: List[str] = []
         for i in range(n_peaks):
-            col = st.text_input(f"Color for {peak_names[i]}", value=default_colors[i % len(default_colors)],
-                                key=f"col_{i}")
+            col = st.text_input(f"Color for {peak_names[i]}", value=default_colors[i % len(default_colors)], key=f"col_{i}")
             peak_colors.append(col)
 
         st.header("Peak width search")
@@ -162,7 +163,7 @@ def main():
         with c1:
             wmin = int(st.number_input("Width min (index)", value=100, min_value=10, step=10))
         with c2:
-            wmax = int(st.number_input("Width max (index)", value=400, min_value=wmin + 1, step=10))
+            wmax = int(st.number_input("Width max (index)", value=400, min_value=wmin+1, step=10))
         peak_width_range = [wmin, wmax]
 
         st.header("Baseline")
@@ -176,9 +177,9 @@ def main():
         for i in range(required_ranges):
             c1, c2 = st.columns(2)
             with c1:
-                xmin = st.number_input(f"Baseline range {i + 1} min ({x_label_preview})", value=0.0, key=f"bl_min_{i}")
+                xmin = st.number_input(f"Baseline range {i+1} min ({x_label_preview})", value=0.0, key=f"bl_min_{i}")
             with c2:
-                xmax = st.number_input(f"Baseline range {i + 1} max ({x_label_preview})", value=1.0, key=f"bl_max_{i}")
+                xmax = st.number_input(f"Baseline range {i+1} max ({x_label_preview})", value=1.0, key=f"bl_max_{i}")
             if xmax < xmin:
                 xmin, xmax = xmax, xmin
             baseline_ranges.append((float(xmin), float(xmax)))
@@ -216,7 +217,7 @@ def main():
     with right:
         st.subheader("Status")
 
-        # Build a lightweight signature of inputs; forces prompt update on change
+        # Build a signature of inputs; triggers ASAP render on change
         sig = _config_signature(
             data_hash=("none" if data_arr is None else str(data_arr.shape) + str(data_arr[:2].tolist())),
             calib_hash=("none" if calib_arr is None else str(calib_arr.shape) + str(calib_arr[:2].tolist())),
@@ -282,7 +283,7 @@ def main():
                     legend_style=legend_style,
                 )
 
-                st.session_state.last_update_time = now
+                st.session_state.lastupdatetime = now
 
                 st.subheader("Deconvolution Plot")
                 st.pyplot(fig, clear_figure=True)
@@ -311,8 +312,7 @@ def main():
                 remaining = max(0.0, 3.0 - (now - last)) if last > 0.0 else 0.0
                 st.caption(f"Next auto-update in {remaining:.1f} s")
 
-    st.caption(
-        "Auto-updates every 3 seconds; heavy redraw is throttled to timer ticks to avoid re-rendering after each change.")
+    st.caption("Auto-updates every 3 seconds; heavy redraw is throttled to timer ticks to avoid re-rendering after each change.")
 
 
 if __name__ == "__main__":
