@@ -130,7 +130,7 @@ def main():
                 index=0
             )
 
-            # Baseline ranges UI - only show for flat, linear, quadratic methods
+            # Baseline ranges UI - only show for flat, linear, quadratic method
             if baseline_method not in ["None", "arpls"]:
                 required_ranges = {"flat": 1, "linear": 2, "quadratic": 3}.get(baseline_method, 0)
                 st.write(f"Enter {required_ranges} baseline range(s) for {baseline_method} correction:")
