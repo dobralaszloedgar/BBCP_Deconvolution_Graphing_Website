@@ -5,4 +5,3 @@ streamlit
 fonttools
 requests
 pybaselines
-streamlit-autorefresh
