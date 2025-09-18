@@ -64,17 +64,99 @@ def _parse_float_list(text: str) -> List[float]:
 
 def _config_signature(**kwargs) -> str:
     """
-    Build a small deterministic signature of the current config to detect changes.
+    Build a deterministic, order-stable signature of the current config to detect changes.
+    Handles nested dicts/lists/tuples/sets, bytes, and NumPy-like arrays without
+    hashing entire large buffers (uses shape/dtype and head/tail sampling).
     """
+    import hashlib
+
+    def _to_bytes(obj) -> bytes:
+        # Primitives and direct bytes
+        if obj is None:
+            return b'null'
+        if isinstance(obj, (bytes, bytearray, memoryview)):
+            return bytes(obj)
+        if isinstance(obj, (str, int, bool)):
+            return repr(obj).encode("utf-8")
+        if isinstance(obj, float):
+            # Normalize -0.0 and ensure stable textual form
+            if obj == 0.0:
+                obj = 0.0
+            return repr(float(obj)).encode("utf-8")
+
+        # NumPy-like arrays (duck-typed)
+        if hasattr(obj, "dtype") and hasattr(obj, "shape") and hasattr(obj, "tobytes"):
+            try:
+                h = hashlib.sha256()
+                h.update(repr(getattr(obj, "shape", None)).encode("utf-8"))
+                h.update(repr(getattr(obj, "dtype", None)).encode("utf-8"))
+                # Try zero-copy bytes view
+                try:
+                    mv = memoryview(obj).cast("B")
+                    total = len(mv)
+                    if total <= 256:
+                        h.update(mv.tobytes())
+                    else:
+                        h.update(mv[:128].tobytes())
+                        h.update(mv[-128:].tobytes())
+                except Exception:
+                    bb = obj.tobytes()
+                    if len(bb) <= 256:
+                        h.update(bb)
+                    else:
+                        h.update(bb[:128])
+                        h.update(bb[-128:])
+                return h.digest()
+            except Exception:
+                return repr(obj).encode("utf-8")
+
+        # Mappings (sorted by key repr for determinism)
+        if isinstance(obj, dict):
+            h = hashlib.sha256()
+            h.update(b"{")
+            for i, key in enumerate(sorted(obj.keys(), key=lambda x: repr(x))):
+                if i:
+                    h.update(b",")
+                h.update(_to_bytes(key))
+                h.update(b":")
+                h.update(_to_bytes(obj[key]))
+            h.update(b"}")
+            return h.digest()
+
+        # Sets/frozensets (order-independent via sorting of item digests)
+        if isinstance(obj, (set, frozenset)):
+            item_bytes = sorted((_to_bytes(x) for x in obj))
+            h = hashlib.sha256()
+            h.update(b"(")
+            for i, bts in enumerate(item_bytes):
+                if i:
+                    h.update(b",")
+                h.update(bts)
+            h.update(b")")
+            return h.digest()
+
+        # Sequences
+        if isinstance(obj, (list, tuple)):
+            h = hashlib.sha256()
+            h.update(b"[" if isinstance(obj, list) else b"(")
+            for i, item in enumerate(obj):
+                if i:
+                    h.update(b",")
+                h.update(_to_bytes(item))
+            h.update(b"]" if isinstance(obj, list) else b")")
+            return h.digest()
+
+        # Fallback
+        return repr(obj).encode("utf-8")
+
     m = hashlib.sha256()
-    for k in sorted(kwargs.keys()):
-        v = kwargs[k]
-        if isinstance(v, (list, tuple)):
-            m.update(str((k, tuple(v))).encode())
-        else:
-            # Corrected: encode BEFORE update, not after
-            m.update(str((k, v)).encode())
+    for k in sorted(kwargs.keys(), key=lambda x: repr(x)):
+        m.update(_to_bytes(k))
+        m.update(b"=")
+        m.update(_to_bytes(kwargs[k]))
+        m.update(b";")
     return m.hexdigest()
+
 
 
 def _auto_refresh_every(ms: int, key: str = "autorefresh_tick"):
