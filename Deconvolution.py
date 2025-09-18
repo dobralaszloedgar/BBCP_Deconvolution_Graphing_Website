@@ -120,7 +120,7 @@ def run_deconvolution(
             baseline_fitter = Baseline()
             baseline = baseline_fitter.loess(
                 y, symmetric_weights=False, fraction=0.38,
-                scale=3, poly_order=1
+                scale=3, poly_order=2
             )[0]
             return y - baseline, baseline
 
