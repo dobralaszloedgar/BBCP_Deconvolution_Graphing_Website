@@ -15,7 +15,7 @@ try:
     PYBASELINES_AVAILABLE = True
 except ImportError:
     PYBASELINES_AVAILABLE = False
-    st.warning("pybaselines not installed. ARPLS baseline correction will not be available.")
+    st.warning("pybaselines not installed. ASLS baseline correction will not be available.")
 
 def setup_custom_fonts():
     """Add custom fonts from the fonts directory to matplotlib's font manager"""
@@ -114,11 +114,11 @@ def run_deconvolution(
         if method == 'None':
             # No baseline correction
             return y, np.zeros_like(y)
-        elif method == 'arpls':
+        elif method == 'asls':
             if not PYBASELINES_AVAILABLE:
-                raise ImportError("pybaselines is required for ARPLS baseline correction")
+                raise ImportError("pybaselines is required for asls baseline correction")
             baseline_fitter = Baseline()
-            baseline = baseline_fitter.arpls(y)[0]
+            baseline = baseline_fitter.asls(y, lam=1e9, max_iter=50)[0]
             return y - baseline, baseline
 
         ref_points = []
