@@ -119,7 +119,7 @@ def run_deconvolution(
                 raise ImportError("pybaselines is required for LOESS baseline correction")
             baseline_fitter = Baseline()
             baseline = baseline_fitter.loess(
-                y, symmetric_weights=False, fraction=0.2,
+                y, symmetric_weights=False, fraction=0.4,
                 scale=2, poly_order=2
             )[0]
             return y - baseline, baseline
