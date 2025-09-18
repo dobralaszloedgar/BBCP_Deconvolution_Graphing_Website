@@ -118,9 +118,7 @@ def run_deconvolution(
             if not PYBASELINES_AVAILABLE:
                 raise ImportError("pybaselines is required for asls baseline correction")
             baseline_fitter = Baseline()
-            baseline = baseline_fitter.arpls(y, lam=1e2,  # Very low regularization (default is 1e6)
-                ratio=0.001,  # Very low convergence ratio
-                max_iter=10)[0]
+            baseline = baseline_fitter.asls(y, p=.999, lam=1e11, max_iter=10)[0]
             return y - baseline, baseline
 
         ref_points = []
