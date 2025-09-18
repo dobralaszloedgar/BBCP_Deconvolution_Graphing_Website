@@ -1,4 +1,3 @@
-
 from Deconvolution import *
 import streamlit as st
 import numpy as np
@@ -6,7 +5,6 @@ import requests
 import tempfile
 import os
 import time
-from datetime import datetime
 
 
 def _clear_query_params_and_rerun():
@@ -67,6 +65,10 @@ def main():
         st.session_state.last_update_time = 0
     if 'plot_x_axis' not in st.session_state:
         st.session_state.plot_x_axis = "MW"  # Default to molecular weight
+    if 'last_input_time' not in st.session_state:
+        st.session_state.last_input_time = 0
+    if 'update_pending' not in st.session_state:
+        st.session_state.update_pending = False
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -157,8 +159,8 @@ def main():
                 mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=1000.0, format="%e")
                 mw_max = st.number_input("MW Upper Bound", 1e3, 1e10, 1e7, step=1000000.0, format="%e")
             else:
-                rt_min = st.number_input("RT Lower Bound (min)", 0.0, 100.0, 10.0, step=0.1)
-                rt_max = st.number_input("RT Upper Bound (min)", 0.0, 100.0, 30.0, step=0.1)
+                rt_min = st.number_input("RT Lower Bound (min)", 0.0, 100.0, 8.0, step=0.1)
+                rt_max = st.number_input("RT Upper Bound (min)", 0.0, 100.0, 19.0, step=0.1)
 
             y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01)
             y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01)
@@ -259,8 +261,26 @@ def main():
             y_label_style = st.selectbox("Y-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
             legend_style = st.selectbox("Legend Style", ["normal", "italic", "bold", "bold italic"], index=0)
 
-    # Update graph button
-    update_graph = st.button("Update Graph", type="primary")
+    # Debounce mechanism for automatic updates
+    current_time = time.time()
+    debounce_delay = 2.0  # 2 seconds debounce
+
+    # Check if we should update the graph
+    if current_time - st.session_state.last_input_time > debounce_delay and st.session_state.update_pending:
+        st.session_state.update_pending = False
+        st.session_state.last_update_time = current_time
+        should_update = True
+    else:
+        should_update = False
+
+    # Mark input time when any widget changes
+    if st.session_state.get('widget_counter', 0) != st.session_state.get('prev_widget_counter', 0):
+        st.session_state.last_input_time = current_time
+        st.session_state.update_pending = True
+        st.session_state.prev_widget_counter = st.session_state.get('widget_counter', 0)
+
+    # Increment widget counter to detect changes
+    st.session_state.widget_counter = st.session_state.get('widget_counter', 0) + 1
 
     # Utilities
     def parse_ranges(inputs, is_mw=True):
@@ -288,13 +308,13 @@ def main():
 
     # Process when data file is present (calibration file only needed for MW)
     if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
-        # Check if we should update the graph
-        current_time = time.time()
-        should_update = update_graph or (current_time - st.session_state.last_update_time > 3)
+        # Show update status
+        if st.session_state.update_pending:
+            time_until_update = debounce_delay - (current_time - st.session_state.last_input_time)
+            if time_until_update > 0:
+                st.info(f"Graph will update in {time_until_update:.1f} seconds...")
 
         if should_update:
-            st.session_state.last_update_time = current_time
-
             try:
                 is_mw = st.session_state.plot_x_axis == "MW"
                 baseline_ranges = parse_ranges(baseline_ranges_inputs, is_mw) if baseline_method not in ["None",
@@ -385,10 +405,6 @@ def main():
                             pass
                     except Exception:
                         pass
-        else:
-            # Show a message that the graph will update soon
-            time_until_update = 3 - (current_time - st.session_state.last_update_time)
-            st.info(f"Graph will update in {time_until_update:.1f} seconds...")
     else:
         if data_source == "Upload My Own Data":
             if st.session_state.plot_x_axis == "MW":
