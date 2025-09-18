@@ -1,9 +1,13 @@
+
 from Deconvolution import *
 import streamlit as st
 import numpy as np
 import requests
 import tempfile
 import os
+import time
+from datetime import datetime
+
 
 def _clear_query_params_and_rerun():
     try:
@@ -16,6 +20,7 @@ def _clear_query_params_and_rerun():
         except Exception:
             pass
     st.rerun()
+
 
 def _set_page_meta(title: str, icon: str):
     """
@@ -52,10 +57,16 @@ def _set_page_meta(title: str, icon: str):
         """
         st.markdown(js, unsafe_allow_html=True)
 
+
 def main():
     # Ensure tab title and icon reflect the Gaussian page
     _set_page_meta("Deconvolution", "📊")
 
+    # Initialize session state for graph update timing
+    if 'last_update_time' not in st.session_state:
+        st.session_state.last_update_time = 0
+    if 'plot_x_axis' not in st.session_state:
+        st.session_state.plot_x_axis = "MW"  # Default to molecular weight
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -100,8 +111,35 @@ def main():
         else:
             st.stop()
     else:
-        cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt")
-        data_file = st.file_uploader("Chromatogram Data (.txt)", type="txt")
+        col1, col2 = st.columns(2)
+        with col1:
+            data_file = st.file_uploader("Chromatogram Data (.txt)", type="txt")
+        with col2:
+            # Only show calibration upload if plotting against MW
+            if st.session_state.plot_x_axis == "MW":
+                cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt")
+            else:
+                cal_file = None
+                st.info("No calibration needed for retention time plotting")
+
+    # X-axis type selection
+    x_axis_col1, x_axis_col2 = st.columns([1, 3])
+    with x_axis_col1:
+        new_x_axis = st.radio("X-Axis", ["Molecular Weight", "Retention Time"],
+                              index=0 if st.session_state.plot_x_axis == "MW" else 1,
+                              key="x_axis_selector")
+
+        # Update session state if changed
+        if new_x_axis == "Molecular Weight":
+            st.session_state.plot_x_axis = "MW"
+        else:
+            st.session_state.plot_x_axis = "RT"
+
+    with x_axis_col2:
+        if st.session_state.plot_x_axis == "MW" and cal_file is None and data_source == "Upload My Own Data":
+            st.warning("Calibration file required for molecular weight plotting")
+        elif st.session_state.plot_x_axis == "RT":
+            st.info("Plotting against retention time (minutes)")
 
     # Initialize session state for expanders
     if 'expander_basic' not in st.session_state:
@@ -115,9 +153,13 @@ def main():
     with st.expander("Basic Parameters", expanded=st.session_state.expander_basic):
         col1, col2 = st.columns(2)
         with col1:
-            mw_min=1e3
-            mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=np.floor(np.log10(mw_min)), format="%e")
-            mw_max = st.number_input("MW Upper Bound", 1e3, 1e10, 1e7, step=1e6, format="%e")
+            if st.session_state.plot_x_axis == "MW":
+                mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=1000.0, format="%e")
+                mw_max = st.number_input("MW Upper Bound", 1e3, 1e10, 1e7, step=1000000.0, format="%e")
+            else:
+                rt_min = st.number_input("RT Lower Bound (min)", 0.0, 100.0, 10.0, step=0.1)
+                rt_max = st.number_input("RT Upper Bound (min)", 0.0, 100.0, 30.0, step=0.1)
+
             y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01)
             y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01)
         with col2:
@@ -130,15 +172,19 @@ def main():
                 index=0
             )
 
-            # Baseline ranges UI - only show for flat, linear, quadratic method
+            # Baseline ranges UI - only show for flat, linear, quadratic methods
             if baseline_method not in ["None", "arpls"]:
+                unit = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
                 required_ranges = {"flat": 1, "linear": 2, "quadratic": 3}.get(baseline_method, 0)
-                st.write(f"Enter {required_ranges} baseline range(s) for {baseline_method} correction:")
+                st.write(f"Enter {required_ranges} baseline range(s) for {baseline_method} correction ({unit}):")
                 baseline_ranges_inputs = []
                 for i in range(required_ranges):
-                    default_val = "1e3-1.2e3" if i == 0 else f"{i + 1}e4-{i + 2}e4" if i == 1 else f"{i + 1}e6-{i + 2}e6"
+                    if st.session_state.plot_x_axis == "MW":
+                        default_val = "1e3-1.2e3" if i == 0 else f"{i + 1}e4-{i + 2}e4" if i == 1 else f"{i + 1}e6-{i + 2}e6"
+                    else:
+                        default_val = f"10.0-11.0" if i == 0 else f"{12.0 + i}-{13.0 + i}" if i == 1 else f"{15.0 + i}-{16.0 + i}"
                     range_input = st.text_input(
-                        f"Baseline Range {i + 1} (MW or MW-MW)",
+                        f"Baseline Range {i + 1} ({unit})",
                         value=default_val, key=f"bl_range_{i}"
                     )
                     baseline_ranges_inputs.append(range_input)
@@ -146,8 +192,9 @@ def main():
                 baseline_ranges_inputs = []
 
         # Manual peaks
-        peaks_txt = st.text_input("Manual Peaks (comma list, blank=auto)", "")
-        peaks_are_mw = st.checkbox("Manual Peaks Given As MW (unchecked=RT)", True)
+        unit_label = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
+        peaks_txt = st.text_input(f"Manual Peaks (comma list, blank=auto) in {unit_label}", "")
+        peaks_are_mw = st.checkbox(f"Manual Peaks Given As {unit_label}", True)
 
     # Peak Colors And Names
     with st.expander("Peak Colors And Names", expanded=st.session_state.expander_advanced):
@@ -201,14 +248,22 @@ def main():
         with col2:
             fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5)
             fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5)
-            x_label = st.text_input("X-Axis Label", "Molecular weight (g/mol)")
+
+            if st.session_state.plot_x_axis == "MW":
+                x_label = st.text_input("X-Axis Label", "Molecular weight (g/mol)")
+            else:
+                x_label = st.text_input("X-Axis Label", "Retention Time (min)")
+
             x_label_style = st.selectbox("X-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
             y_label = st.text_input("Y-Axis Label", "Normalized Response")
             y_label_style = st.selectbox("Y-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
             legend_style = st.selectbox("Legend Style", ["normal", "italic", "bold", "bold italic"], index=0)
 
+    # Update graph button
+    update_graph = st.button("Update Graph", type="primary")
+
     # Utilities
-    def parse_ranges(inputs):
+    def parse_ranges(inputs, is_mw=True):
         rngs = []
         for inp in inputs:
             if not inp.strip():
@@ -222,88 +277,125 @@ def main():
             else:
                 try:
                     val = float(inp)
-                    rngs.append([val * 0.99, val * 1.01])
+                    # For single values, create a small range around the value
+                    if is_mw:
+                        rngs.append([val * 0.99, val * 1.01])
+                    else:
+                        rngs.append([val - 0.01, val + 0.01])
                 except ValueError:
                     st.warning(f"Invalid value format: {inp}. Skipping.")
         return rngs
 
-    # Process when both files present
-    if cal_file and data_file:
-        try:
-            baseline_ranges = parse_ranges(baseline_ranges_inputs) if baseline_method not in ["None", "arpls"] else []
+    # Process when data file is present (calibration file only needed for MW)
+    if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
+        # Check if we should update the graph
+        current_time = time.time()
+        should_update = update_graph or (current_time - st.session_state.last_update_time > 3)
 
-            # Load data (assuming tab-separated format with 2 header rows)
-            calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2)
-            data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
+        if should_update:
+            st.session_state.last_update_time = current_time
 
-            # Manual peaks
-            manual_peaks = []
-            if peaks_txt.strip():
-                for p in peaks_txt.split(","):
+            try:
+                is_mw = st.session_state.plot_x_axis == "MW"
+                baseline_ranges = parse_ranges(baseline_ranges_inputs, is_mw) if baseline_method not in ["None",
+                                                                                                         "arpls"] else []
+
+                # Load data (assuming tab-separated format with 2 header rows)
+                data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
+
+                # Load calibration if needed
+                calib = None
+                if is_mw and cal_file:
+                    calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2)
+                elif is_mw:
+                    st.error("Calibration file required for molecular weight plotting")
+                    st.stop()
+
+                # Manual peaks
+                manual_peaks = []
+                if peaks_txt.strip():
+                    for p in peaks_txt.split(","):
+                        try:
+                            manual_peaks.append(float(p.strip()))
+                        except ValueError:
+                            st.warning(f"Invalid peak value: {p}. Skipping.")
+
+                # Set limits based on x-axis type
+                if is_mw:
+                    x_lim = [mw_min, mw_max]
+                else:
+                    x_lim = [rt_min, rt_max]
+
+                # Run deconvolution
+                fig, table = run_deconvolution(
+                    data_array=data,
+                    calib_array=calib,
+                    x_axis_type=st.session_state.plot_x_axis,
+                    x_lim=x_lim,
+                    y_lim=[y_low, y_high],
+                    n_peaks=peaks_n,
+                    plot_sum=plot_sum,
+                    manual_peaks=manual_peaks,
+                    peaks_are_mw=peaks_are_mw,
+                    peak_names=custom_names,
+                    peak_colors=custom_colors,
+                    peak_width_range=[int(w_lo), int(w_hi)],
+                    baseline_method=baseline_method,
+                    baseline_ranges=baseline_ranges,
+                    original_data_color=original_data_color,
+                    original_data_label=original_data_name,
+                    font_family=font_family,
+                    font_size=font_size,
+                    fig_size=(fig_width, fig_height),
+                    x_label=x_label,
+                    y_label=y_label,
+                    x_label_style=x_label_style,
+                    y_label_style=y_label_style,
+                    legend_style=legend_style
+                )
+
+                # Display results
+                st.pyplot(fig, dpi=600, width="content")
+                st.dataframe(table, width="content")
+
+            except Exception as e:
+                st.error(f"Error processing files: {str(e)}")
+                st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
+            finally:
+                # Clean up temporary files if example data was used
+                if data_source == "Use Example Data":
                     try:
-                        manual_peaks.append(float(p.strip()))
-                    except ValueError:
-                        st.warning(f"Invalid peak value: {p}. Skipping.")
-
-            # Run deconvolution
-            fig, table = run_deconvolution(
-                data_array=data,
-                calib_array=calib,
-                mw_lim=[mw_min, mw_max],
-                y_lim=[y_low, y_high],
-                n_peaks=peaks_n,
-                plot_sum=plot_sum,
-                manual_peaks=manual_peaks,
-                peaks_are_mw=peaks_are_mw,
-                peak_names=custom_names,
-                peak_colors=custom_colors,
-                peak_width_range=[int(w_lo), int(w_hi)],
-                baseline_method=baseline_method,
-                baseline_ranges=baseline_ranges,
-                original_data_color=original_data_color,
-                original_data_label=original_data_name,
-                font_family=font_family,
-                font_size=font_size,
-                fig_size=(fig_width, fig_height),
-                x_label=x_label,
-                y_label=y_label,
-                x_label_style=x_label_style,
-                y_label_style=y_label_style,
-                legend_style=legend_style
-            )
-
-            # Display results
-            st.pyplot(fig, dpi=600, width="content")
-            st.dataframe(table, width="content")
-
-        except Exception as e:
-            st.error(f"Error processing files: {str(e)}")
-            st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
-        finally:
-            # Clean up temporary files if example data was used
-            if data_source == "Use Example Data":
-                try:
-                    try:
-                        cal_file.close()
+                        try:
+                            if cal_file:
+                                cal_file.close()
+                        except Exception:
+                            pass
+                        try:
+                            data_file.close()
+                        except Exception:
+                            pass
+                        try:
+                            if cal_file:
+                                os.unlink(cal_file.name)
+                        except Exception:
+                            pass
+                        try:
+                            os.unlink(data_file.name)
+                        except Exception:
+                            pass
                     except Exception:
                         pass
-                    try:
-                        data_file.close()
-                    except Exception:
-                        pass
-                    try:
-                        os.unlink(cal_file.name)
-                    except Exception:
-                        pass
-                    try:
-                        os.unlink(data_file.name)
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
+        else:
+            # Show a message that the graph will update soon
+            time_until_update = 3 - (current_time - st.session_state.last_update_time)
+            st.info(f"Graph will update in {time_until_update:.1f} seconds...")
     else:
         if data_source == "Upload My Own Data":
-            st.info("Upload both calibration and data files to begin.")
+            if st.session_state.plot_x_axis == "MW":
+                st.info("Upload both calibration and data files to begin.")
+            else:
+                st.info("Upload data file to begin.")
+
 
 if __name__ == "__main__":
     main()
