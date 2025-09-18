@@ -1,342 +1,401 @@
-from __future__ import annotations
 
-import os
-import io
-import time
-import hashlib
-from datetime import datetime
-from typing import List, Tuple, Optional
-
-import numpy as np
-import pandas as pd
+from Deconvolution import *
 import streamlit as st
+import numpy as np
+import requests
+import tempfile
+import os
+import time
+from datetime import datetime
 
-from streamlit_autorefresh import st_autorefresh  # pip install streamlit-autorefresh
 
-# Import the core deconvolution engine and flags from the shared module
-from Deconvolution import run_deconvolution, PYBASELINES_AVAILABLE  # noqa: E402
-
-
-# ----------------------------- Utilities ----------------------------- #
-
-def _read_table_file(uploaded) -> Optional[np.ndarray]:
-    """
-    Read a two-column numeric file (CSV/TSV/whitespace).
-    Returns np.ndarray of shape (N, 2) or None if not available/parsable.
-    """
-    if uploaded is None:
-        return None
-
-    # Try several separators
-    content = uploaded.read()
-    uploaded.seek(0)
-    buf = io.BytesIO(content)
-
-    # Try pandas with automatic delimiter inference
+def _clear_query_params_and_rerun():
     try:
-        df = pd.read_csv(buf, sep=None, engine="python", header=None, comment="#")
-        if df.shape[1] < 2:
-            # try whitespace
-            buf.seek(0)
-            df = pd.read_csv(buf, sep=r"\s+", engine="python", header=None, comment="#")
+        # New API
+        st.query_params.clear()
     except Exception:
-        # Final fallback: whitespace
-        buf.seek(0)
+        # Old API: set to empty
         try:
-            df = pd.read_csv(buf, sep=r"\s+", engine="python", header=None, comment="#")
-        except Exception:
-            return None
-
-    # Use the first two numeric columns
-    if df.shape[1] >= 2:
-        arr = df.iloc[:, :2].to_numpy(dtype=float)
-        return arr
-    return None
-
-
-def _hash_bytes(b: bytes) -> str:
-    return hashlib.sha256(b).hexdigest()
-
-
-def _hash_array(a: Optional[np.ndarray]) -> str:
-    if a is None:
-        return "none"
-    # Use a compact representation for hashing
-    m = hashlib.sha256()
-    m.update(str(a.shape).encode())
-    # Limit to first/last 2 rows to avoid huge payloads but detect changes
-    if a.size > 0:
-        head = a[:2].tobytes()
-        tail = a[-2:].tobytes() if len(a) > 2 else b""
-        m.update(head)
-        m.update(tail)
-    return m.hexdigest()
-
-
-def _parse_float_list(text: str) -> List[float]:
-    if not text:
-        return []
-    vals: List[float] = []
-    for chunk in text.replace(";", ",").split(","):
-        s = chunk.strip()
-        if not s:
-            continue
-        try:
-            vals.append(float(s))
+            st.experimental_set_query_params()
         except Exception:
             pass
-    return vals
+    st.rerun()
 
 
-def _baseline_ranges_inputs(required: int, x_label: str) -> List[Tuple[float, float]]:
-    ranges: List[Tuple[float, float]] = []
-    for i in range(required):
-        c1, c2 = st.columns(2)
-        with c1:
-            xmin = st.number_input(f"Baseline range {i+1} min ({x_label})", value=0.0, key=f"bl_min_{i}")
-        with c2:
-            xmax = st.number_input(f"Baseline range {i+1} max ({x_label})", value=1.0, key=f"bl_max_{i}")
-        if xmax < xmin:
-            xmin, xmax = xmax, xmin
-        ranges.append((float(xmin), float(xmax)))
-    return ranges
+def _set_page_meta(title: str, icon: str):
+    """
+    Try to set page config. If the launcher already called set_page_config,
+    fall back to JS to update the tab title and favicon dynamically.
+    """
+    try:
+        st.set_page_config(
+            page_title=title,
+            page_icon=icon,
+            initial_sidebar_state="collapsed",
+        )
+    except Exception:
+        # Fallback: update title + favicon via a tiny script (works when page_config already set)
+        emoji = icon
+        js = f"""
+        <script>
+        (function() {{
+            const setTitle = (t) => {{ document.title = t; }};
+            const setFavicon = (emoji) => {{
+                const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>
+                               <text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='52'>{emoji}</text>
+                             </svg>`;
+                const url = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
+                let link = document.querySelector("link[rel='icon']") || document.createElement('link');
+                link.setAttribute('rel', 'icon');
+                link.setAttribute('href', url);
+                document.head.appendChild(link);
+            }};
+            setTitle("{title}");
+            setFavicon("{emoji}");
+        }})();
+        </script>
+        """
+        st.markdown(js, unsafe_allow_html=True)
 
 
-def _config_signature(**kwargs) -> str:
-    # Create a deterministic small signature to detect changes
-    m = hashlib.sha256()
-    for k in sorted(kwargs.keys()):
-        v = kwargs[k]
-        if isinstance(v, (list, tuple)):
-            m.update(str((k, tuple(v))).encode())
-        else:
-            m.update(str((k, v)).encode())
-    return m.hexdigest()
+def main():
+    # Ensure tab title and icon reflect the Gaussian page
+    _set_page_meta("Deconvolution", "📊")
 
+    # Initialize session state for graph update timing
+    if 'last_update_time' not in st.session_state:
+        st.session_state.last_update_time = 0
+    if 'plot_x_axis' not in st.session_state:
+        st.session_state.plot_x_axis = "MW"  # Default to molecular weight
 
-# -------------------------- Page bootstrapping ------------------------ #
+    # Back to launcher
+    if st.button("← Back to Launcher"):
+        _clear_query_params_and_rerun()
 
-st.set_page_config(
-    page_title="Gaussian Deconvolution",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+    st.title("Gaussian Deconvolution")
 
-st.title("Gaussian Deconvolution")  # keep minimal top bar
+    # Default file URLs
+    DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
+    DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
 
-# Kick off an auto-rerun every 3 seconds; debounced while interacting
-st_autorefresh(interval=3000, debounce=True, key="gauss_autorefresh")
-
-# Timestamp state
-if "last_update_time" not in st.session_state:
-    st.session_state.last_update_time = 0.0
-
-if "config_sig" not in st.session_state:
-    st.session_state.config_sig = ""
-
-
-# ------------------------------- Sidebar ------------------------------ #
-with st.sidebar:
-    st.header("Data")
-    data_file = st.file_uploader("Upload data (two columns: x, y)", type=["csv", "tsv", "txt"])
-    calib_file = st.file_uploader("Upload calibration (RT, log10(MW)) [required for MW mode]", type=["csv", "tsv", "txt"])
-
-    st.header("X-axis")
-    x_axis_type = st.radio("X axis type", options=["MW", "RT"], index=0, horizontal=True)
-
-    if x_axis_type == "MW":
-        x_min = st.number_input("MW min (g/mol)", value=1e3, format="%.6g")
-        x_max = st.number_input("MW max (g/mol)", value=1e7, format="%.6g")
-        x_lim = [float(x_min), float(x_max)]
-        x_label_preview = "MW"
-    else:
-        x_min = st.number_input("RT min (min)", value=0.0)
-        x_max = st.number_input("RT max (min)", value=30.0)
-        x_lim = [float(x_min), float(x_max)]
-        x_label_preview = "RT"
-
-    st.header("Y-axis")
-    y_min = st.number_input("Y min", value=-0.02)
-    y_max = st.number_input("Y max", value=1.0)
-    y_lim = [float(y_min), float(y_max)]
-
-    st.header("Peaks")
-    n_peaks = int(st.number_input("Number of peaks", min_value=1, max_value=12, value=4, step=1))
-    plot_sum = st.checkbox("Plot sum of Gaussians", value=False)
-
-    manual_peaks_raw = st.text_input(f"Manual peaks ({x_label_preview} values, comma or semicolon separated)", value="")
-    manual_peaks = _parse_float_list(manual_peaks_raw)
-    peaks_are_mw = st.checkbox("Manual peaks are MW values (if MW mode)", value=True)
-
-    # Names and colors
-    default_names = [f"Peak {i+1}" for i in range(n_peaks)]
-    peak_names_text = st.text_input("Peak names (comma separated)", value=", ".join(default_names))
-    peak_names = [s.strip() for s in peak_names_text.split(",") if s.strip()]
-    if len(peak_names) < n_peaks:
-        peak_names += [f"Peak {i+1}" for i in range(len(peak_names), n_peaks)]
-    if len(peak_names) > n_peaks:
-        peak_names = peak_names[:n_peaks]
-
-    st.markdown("Colors (hex)")
-    default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c',
-                      '#a83232', '#a832a8', '#32a852', '#3264a8',
-                      '#a86432', '#6432a8', '#2ca02c', '#d62728']
-    peak_colors: List[str] = []
-    for i in range(n_peaks):
-        col = st.text_input(f"Color for {peak_names[i]}", value=default_colors[i % len(default_colors)], key=f"col_{i}")
-        peak_colors.append(col)
-
-    st.header("Peak width search")
-    c1, c2 = st.columns(2)
-    with c1:
-        wmin = int(st.number_input("Width min (index)", value=100, min_value=10, step=10))
-    with c2:
-        wmax = int(st.number_input("Width max (index)", value=400, min_value=wmin+1, step=10))
-    peak_width_range = [wmin, wmax]
-
-    st.header("Baseline")
-    baseline_options = ["None", "flat", "linear", "quadratic"]
-    if PYBASELINES_AVAILABLE:
-        baseline_options.append("arpls")
-    baseline_method = st.selectbox("Method", options=baseline_options, index=0)
-
-    required_ranges = {"None": 0, "flat": 1, "linear": 2, "quadratic": 3, "arpls": 0}[baseline_method]
-    baseline_ranges = _baseline_ranges_inputs(required_ranges, x_label_preview)
-
-    st.header("Styles")
-    original_data_label = st.text_input("Original data label", value="Original Data")
-    original_data_color = st.text_input("Original data color (hex)", value="#ef476f")
-    font_family = st.text_input("Font family", value="Times New Roman")
-    font_size = int(st.number_input("Font size", value=12, min_value=6, max_value=48))
-    fig_w = float(st.number_input("Figure width (in)", value=8.0, step=0.5))
-    fig_h = float(st.number_input("Figure height (in)", value=5.0, step=0.5))
-    fig_size = (fig_w, fig_h)
-
-    x_label_text = st.text_input("X label (leave blank for default)", value="")
-    y_label_text = st.text_input("Y label", value="Normalized Response")
-    x_label_style = st.selectbox("X label style", ["normal", "italic", "bold", "italic+bold"], index=0)
-    y_label_style = st.selectbox("Y label style", ["normal", "italic", "bold", "italic+bold"], index=0)
-    legend_style = st.selectbox("Legend style", ["normal", "italic", "bold", "italic+bold"], index=0)
-
-
-# ------------------------------- Main UI ------------------------------ #
-
-left, right = st.columns([3, 2])
-
-with left:
-    st.subheader("Inputs")
-    data_arr = _read_table_file(data_file)
-    if data_arr is not None:
-        st.write(f"Data points: {data_arr.shape[0]} rows")
-    else:
-        st.info("Upload a two-column data file to begin.")
-    calib_arr = _read_table_file(calib_file)
-
-    # Quick hints
-    if x_axis_type == "MW" and calib_arr is None:
-        st.warning("MW mode selected: provide calibration (RT, log10(MW)) to compute MW axis.")
-
-with right:
-    st.subheader("Status")
-    now = time.time()
-    last = float(st.session_state.last_update_time or 0.0)
-
-    # Build a lightweight signature of inputs; forces immediate render on change
-    sig = _config_signature(
-        data_hash=_hash_array(data_arr),
-        calib_hash=_hash_array(calib_arr),
-        x_axis_type=x_axis_type,
-        x_lim=x_lim,
-        y_lim=y_lim,
-        n_peaks=n_peaks,
-        plot_sum=plot_sum,
-        manual_peaks=tuple(manual_peaks),
-        peaks_are_mw=peaks_are_mw,
-        peak_names=tuple(peak_names),
-        peak_colors=tuple(peak_colors),
-        peak_width_range=tuple(peak_width_range),
-        baseline_method=baseline_method,
-        baseline_ranges=tuple(tuple(r) for r in baseline_ranges),
-        original_data_label=original_data_label,
-        original_data_color=original_data_color,
-        font_family=font_family,
-        font_size=font_size,
-        fig_size=fig_size,
-        x_label_text=x_label_text,
-        y_label_text=y_label_text,
-        x_label_style=x_label_style,
-        y_label_style=y_label_style,
-        legend_style=legend_style,
-    )
-
-    # If configuration changed, force an immediate update on next cycle
-    if sig != st.session_state.config_sig:
-        st.session_state.config_sig = sig
-        st.session_state.last_update_time = 0.0  # render ASAP on next run
-        last = 0.0
-
-    # Only render heavy graph on the 3-second tick (or first time)
-    should_update = (last == 0.0) or ((now - last) >= 3.0)
-
-    if should_update and data_arr is not None:
-        # Perform deconvolution and plot
+    # Function to download default files
+    def download_default_file(url, filename):
         try:
-            fig, results_df = run_deconvolution(
-                data_array=data_arr,
-                calib_array=calib_arr,
-                x_axis_type=x_axis_type,
-                x_lim=x_lim,
-                y_lim=y_lim,
-                n_peaks=n_peaks,
-                plot_sum=plot_sum,
-                manual_peaks=manual_peaks,
-                peaks_are_mw=peaks_are_mw,
-                peak_names=peak_names,
-                peak_colors=peak_colors,
-                peak_width_range=peak_width_range,
-                baseline_method=baseline_method,
-                baseline_ranges=baseline_ranges,
-                original_data_color=original_data_color,
-                original_data_label=original_data_label,
-                font_family=font_family,
-                font_size=font_size,
-                fig_size=fig_size,
-                x_label=x_label_text,
-                y_label=y_label_text,
-                x_label_style=x_label_style,
-                y_label_style=y_label_style,
-                legend_style=legend_style,
+            response = requests.get(url)
+            response.raise_for_status()
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+            temp_file.write(response.content)
+            temp_file.close()
+            return temp_file.name
+        except Exception as e:
+            st.error(f"Error downloading default file: {str(e)}")
+            return None
+
+    # Data source selection
+    data_source = st.radio("Select Data Source:", ["Use Example Data", "Upload My Own Data"])
+
+    cal_file = None
+    data_file = None
+
+    if data_source == "Use Example Data":
+        st.info("Using example data to demonstrate the deconvolution process.")
+        with st.spinner("Loading example data..."):
+            cal_path = download_default_file(DEFAULT_CAL_URL, "default_cal.txt")
+            data_path = download_default_file(DEFAULT_DATA_URL, "default_data.txt")
+        if cal_path and data_path:
+            cal_file = open(cal_path, 'r')
+            data_file = open(data_path, 'r')
+            st.success("Example data loaded successfully!")
+            st.write("Calibration curve: RI Calibration Curve 2024 September.txt")
+            st.write("Chromatogram data: 11.15.2024_GB_GRAFT_PS-b-2PLA.txt")
+        else:
+            st.stop()
+    else:
+        col1, col2 = st.columns(2)
+        with col1:
+            data_file = st.file_uploader("Chromatogram Data (.txt)", type="txt")
+        with col2:
+            # Only show calibration upload if plotting against MW
+            if st.session_state.plot_x_axis == "MW":
+                cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt")
+            else:
+                cal_file = None
+                st.info("No calibration needed for retention time plotting")
+
+    # X-axis type selection
+    x_axis_col1, x_axis_col2 = st.columns([1, 3])
+    with x_axis_col1:
+        new_x_axis = st.radio("X-Axis", ["Molecular Weight", "Retention Time"],
+                              index=0 if st.session_state.plot_x_axis == "MW" else 1,
+                              key="x_axis_selector")
+
+        # Update session state if changed
+        if new_x_axis == "Molecular Weight":
+            st.session_state.plot_x_axis = "MW"
+        else:
+            st.session_state.plot_x_axis = "RT"
+
+    with x_axis_col2:
+        if st.session_state.plot_x_axis == "MW" and cal_file is None and data_source == "Upload My Own Data":
+            st.warning("Calibration file required for molecular weight plotting")
+        elif st.session_state.plot_x_axis == "RT":
+            st.info("Plotting against retention time (minutes)")
+
+    # Initialize session state for expanders
+    if 'expander_basic' not in st.session_state:
+        st.session_state.expander_basic = False
+    if 'expander_advanced' not in st.session_state:
+        st.session_state.expander_advanced = False
+    if 'expander_appearance' not in st.session_state:
+        st.session_state.expander_appearance = False
+
+    # Basic Parameters
+    with st.expander("Basic Parameters", expanded=st.session_state.expander_basic):
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.session_state.plot_x_axis == "MW":
+                mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=1000.0, format="%e")
+                mw_max = st.number_input("MW Upper Bound", 1e3, 1e10, 1e7, step=1000000.0, format="%e")
+            else:
+                rt_min = st.number_input("RT Lower Bound (min)", 0.0, 100.0, 10.0, step=0.1)
+                rt_max = st.number_input("RT Upper Bound (min)", 0.0, 100.0, 30.0, step=0.1)
+
+            y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01)
+            y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01)
+        with col2:
+            peaks_n = st.slider("Number Of Peaks", 1, 10, 4)
+            w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10)
+            w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10)
+            baseline_method = st.selectbox(
+                "Baseline Correction Method",
+                ["None", "arpls", "flat", "linear", "quadratic"],
+                index=0
             )
 
-            st.session_state.last_update_time = now
+            # Baseline ranges UI - only show for flat, linear, quadratic methods
+            if baseline_method not in ["None", "arpls"]:
+                unit = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
+                required_ranges = {"flat": 1, "linear": 2, "quadratic": 3}.get(baseline_method, 0)
+                st.write(f"Enter {required_ranges} baseline range(s) for {baseline_method} correction ({unit}):")
+                baseline_ranges_inputs = []
+                for i in range(required_ranges):
+                    if st.session_state.plot_x_axis == "MW":
+                        default_val = "1e3-1.2e3" if i == 0 else f"{i + 1}e4-{i + 2}e4" if i == 1 else f"{i + 1}e6-{i + 2}e6"
+                    else:
+                        default_val = f"10.0-11.0" if i == 0 else f"{12.0 + i}-{13.0 + i}" if i == 1 else f"{15.0 + i}-{16.0 + i}"
+                    range_input = st.text_input(
+                        f"Baseline Range {i + 1} ({unit})",
+                        value=default_val, key=f"bl_range_{i}"
+                    )
+                    baseline_ranges_inputs.append(range_input)
+            else:
+                baseline_ranges_inputs = []
 
-            st.subheader("Deconvolution Plot")
-            st.pyplot(fig, clear_figure=True)
+        # Manual peaks
+        unit_label = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
+        peaks_txt = st.text_input(f"Manual Peaks (comma list, blank=auto) in {unit_label}", "")
+        peaks_are_mw = st.checkbox(f"Manual Peaks Given As {unit_label}", True)
 
-            st.subheader("Results")
-            st.dataframe(results_df, use_container_width=True)
+    # Peak Colors And Names
+    with st.expander("Peak Colors And Names", expanded=st.session_state.expander_advanced):
+        st.write("Peak Names And Colors:")
+        default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5",
+                         "Peak 6", "Peak 7", "Peak 8", "Peak 9", "Peak 10"]
+        default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c', '#a83232',
+                          '#a832a8', '#32a852', '#3264a8', '#a86432', '#6432a8']
 
-            # Optional: CSV download
-            if results_df is not None and len(results_df) > 0:
-                csv_bytes = results_df.to_csv(index=False).encode()
-                st.download_button(
-                    "Download results CSV",
-                    data=csv_bytes,
-                    file_name=f"deconvolution_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
+        custom_names = []
+        custom_colors = []
+
+        cu1, cu2 = st.columns(2)
+        with cu1:
+            original_data_name = st.text_input("Original Data Name", value="Original Data")
+        with cu2:
+            original_data_color = st.color_picker("Original Data Color", value="#ef476f")
+
+        for i in range(peaks_n):
+            col1, col2 = st.columns(2)
+            with col1:
+                name = st.text_input(
+                    f"Peak {i + 1} Name",
+                    value=default_names[i] if i < len(default_names) else f"Peak {i + 1}",
+                    key=f"name_{i}"
+                )
+                custom_names.append(name)
+            with col2:
+                color = st.color_picker(
+                    f"Peak {i + 1} Color",
+                    value=default_colors[i] if i < len(default_colors) else '#000000',
+                    key=f"color_{i}"
+                )
+                custom_colors.append(color)
+
+        plot_sum = st.checkbox("Plot Sum Of Gaussians", False)
+
+    # Appearance Settings
+    with st.expander("Appearance Settings", expanded=st.session_state.expander_appearance):
+        col1, col2 = st.columns(2)
+        with col1:
+            common_fonts = sorted([
+                "Arial", "Times New Roman", "Helvetica", "Verdana", "Georgia",
+                "Courier New", "Tahoma", "Trebuchet MS", "Palatino", "Garamond",
+                "Comic Sans MS", "Impact", "Lucida Console", "Lucida Sans Unicode",
+                "Calibri", "Cambria", "Candara", "Segoe UI", "Optima", "Futura"
+            ])
+            default_font_index = common_fonts.index("Times New Roman") if "Times New Roman" in common_fonts else 0
+            font_family = st.selectbox("Font Family", common_fonts, index=default_font_index)
+            font_size = st.number_input("Font Size", 8, 20, 12, step=1)
+        with col2:
+            fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5)
+            fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5)
+
+            if st.session_state.plot_x_axis == "MW":
+                x_label = st.text_input("X-Axis Label", "Molecular weight (g/mol)")
+            else:
+                x_label = st.text_input("X-Axis Label", "Retention Time (min)")
+
+            x_label_style = st.selectbox("X-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
+            y_label = st.text_input("Y-Axis Label", "Normalized Response")
+            y_label_style = st.selectbox("Y-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
+            legend_style = st.selectbox("Legend Style", ["normal", "italic", "bold", "bold italic"], index=0)
+
+    # Update graph button
+    update_graph = st.button("Update Graph", type="primary")
+
+    # Utilities
+    def parse_ranges(inputs, is_mw=True):
+        rngs = []
+        for inp in inputs:
+            if not inp.strip():
+                continue
+            if "-" in inp:
+                try:
+                    lo, hi = map(float, inp.split("-"))
+                    rngs.append([lo, hi])
+                except ValueError:
+                    st.warning(f"Invalid range format: {inp}. Skipping.")
+            else:
+                try:
+                    val = float(inp)
+                    # For single values, create a small range around the value
+                    if is_mw:
+                        rngs.append([val * 0.99, val * 1.01])
+                    else:
+                        rngs.append([val - 0.01, val + 0.01])
+                except ValueError:
+                    st.warning(f"Invalid value format: {inp}. Skipping.")
+        return rngs
+
+    # Process when data file is present (calibration file only needed for MW)
+    if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
+        # Check if we should update the graph
+        current_time = time.time()
+        should_update = update_graph or (current_time - st.session_state.last_update_time > 3)
+
+        if should_update:
+            st.session_state.last_update_time = current_time
+
+            try:
+                is_mw = st.session_state.plot_x_axis == "MW"
+                baseline_ranges = parse_ranges(baseline_ranges_inputs, is_mw) if baseline_method not in ["None",
+                                                                                                         "arpls"] else []
+
+                # Load data (assuming tab-separated format with 2 header rows)
+                data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
+
+                # Load calibration if needed
+                calib = None
+                if is_mw and cal_file:
+                    calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2)
+                elif is_mw:
+                    st.error("Calibration file required for molecular weight plotting")
+                    st.stop()
+
+                # Manual peaks
+                manual_peaks = []
+                if peaks_txt.strip():
+                    for p in peaks_txt.split(","):
+                        try:
+                            manual_peaks.append(float(p.strip()))
+                        except ValueError:
+                            st.warning(f"Invalid peak value: {p}. Skipping.")
+
+                # Set limits based on x-axis type
+                if is_mw:
+                    x_lim = [mw_min, mw_max]
+                else:
+                    x_lim = [rt_min, rt_max]
+
+                # Run deconvolution
+                fig, table = run_deconvolution(
+                    data_array=data,
+                    calib_array=calib,
+                    x_axis_type=st.session_state.plot_x_axis,
+                    x_lim=x_lim,
+                    y_lim=[y_low, y_high],
+                    n_peaks=peaks_n,
+                    plot_sum=plot_sum,
+                    manual_peaks=manual_peaks,
+                    peaks_are_mw=peaks_are_mw,
+                    peak_names=custom_names,
+                    peak_colors=custom_colors,
+                    peak_width_range=[int(w_lo), int(w_hi)],
+                    baseline_method=baseline_method,
+                    baseline_ranges=baseline_ranges,
+                    original_data_color=original_data_color,
+                    original_data_label=original_data_name,
+                    font_family=font_family,
+                    font_size=font_size,
+                    fig_size=(fig_width, fig_height),
+                    x_label=x_label,
+                    y_label=y_label,
+                    x_label_style=x_label_style,
+                    y_label_style=y_label_style,
+                    legend_style=legend_style
                 )
 
-        except Exception as e:
-            st.error(f"Deconvolution error: {e}")
+                # Display results
+                st.pyplot(fig, dpi=600, width="content")
+                st.dataframe(table, width="content")
 
-    else:
-        # Countdown feedback
-        if data_arr is None:
-            st.info("Waiting for data upload...")
+            except Exception as e:
+                st.error(f"Error processing files: {str(e)}")
+                st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
+            finally:
+                # Clean up temporary files if example data was used
+                if data_source == "Use Example Data":
+                    try:
+                        try:
+                            if cal_file:
+                                cal_file.close()
+                        except Exception:
+                            pass
+                        try:
+                            data_file.close()
+                        except Exception:
+                            pass
+                        try:
+                            if cal_file:
+                                os.unlink(cal_file.name)
+                        except Exception:
+                            pass
+                        try:
+                            os.unlink(data_file.name)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
         else:
-            remaining = max(0.0, 3.0 - (now - last)) if last > 0.0 else 0.0
-            st.caption(f"Next auto-update in {remaining:.1f} s")
+            # Show a message that the graph will update soon
+            time_until_update = 3 - (current_time - st.session_state.last_update_time)
+            st.info(f"Graph will update in {time_until_update:.1f} seconds...")
+    else:
+        if data_source == "Upload My Own Data":
+            if st.session_state.plot_x_axis == "MW":
+                st.info("Upload both calibration and data files to begin.")
+            else:
+                st.info("Upload data file to begin.")
 
-# Footer note
-st.caption("Auto-updating every 3 seconds. Heavy redraw is throttled to timer ticks to avoid re-rendering after each UI change.")
+
+if __name__ == "__main__":
+    main()
