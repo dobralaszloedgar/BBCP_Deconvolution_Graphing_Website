@@ -126,12 +126,12 @@ def main():
             w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10)
             baseline_method = st.selectbox(
                 "Baseline Correction Method",
-                ["None", "loess", "flat", "linear", "quadratic"],
+                ["None", "arpls", "flat", "linear", "quadratic"],
                 index=0
             )
 
             # Baseline ranges UI - only show for flat, linear, quadratic methods
-            if baseline_method not in ["None", "loess"]:
+            if baseline_method not in ["None", "arpls"]:
                 required_ranges = {"flat": 1, "linear": 2, "quadratic": 3}.get(baseline_method, 0)
                 st.write(f"Enter {required_ranges} baseline range(s) for {baseline_method} correction:")
                 baseline_ranges_inputs = []
@@ -230,7 +230,7 @@ def main():
     # Process when both files present
     if cal_file and data_file:
         try:
-            baseline_ranges = parse_ranges(baseline_ranges_inputs) if baseline_method not in ["None", "loess"] else []
+            baseline_ranges = parse_ranges(baseline_ranges_inputs) if baseline_method not in ["None", "arpls"] else []
 
             # Load data (assuming tab-separated format with 2 header rows)
             calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2)
