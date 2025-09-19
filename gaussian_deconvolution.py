@@ -72,6 +72,8 @@ def main():
         st.session_state.table_placeholder = None
     if 'toggle_state' not in st.session_state:
         st.session_state.toggle_state = "MW"  # Track toggle state separately
+    if 'last_params' not in st.session_state:
+        st.session_state.last_params = {}
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -97,7 +99,7 @@ def main():
             return None
 
     # Data source selection
-    data_source = st.radio("Select Data Source:", ["Use Example Data", "Upload My Own Data"])
+    data_source = st.radio("Select Data Source:", ["Use Example Data", "Upload My Own Data"], key="data_source")
 
     cal_file = None
     data_file = None
@@ -118,11 +120,11 @@ def main():
     else:
         col1, col2 = st.columns(2)
         with col1:
-            data_file = st.file_uploader("Chromatogram Data (.txt)", type="txt")
+            data_file = st.file_uploader("Chromatogram Data (.txt)", type="txt", key="data_uploader")
         with col2:
             # Only show calibration upload if plotting against MW
             if st.session_state.plot_x_axis == "MW":
-                cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt")
+                cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt", key="cal_uploader")
             else:
                 cal_file = None
 
@@ -133,7 +135,8 @@ def main():
         use_mw = st.toggle(
             "Retention Time ↔ Molecular Weight",
             value=(st.session_state.plot_x_axis == "MW"),
-            help="Toggle between Molecular Weight and Retention Time for X-axis"
+            help="Toggle between Molecular Weight and Retention Time for X-axis",
+            key="x_axis_toggle"
         )
 
         # Check if toggle state changed
@@ -152,26 +155,27 @@ def main():
             st.warning("Calibration file required for molecular weight plotting")
 
     # Basic Parameters
-    with st.expander("Basic Parameters", expanded=True):
+    with st.expander("Basic Parameters", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
             if st.session_state.plot_x_axis == "MW":
-                mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=1000.0, format="%e")
-                mw_max = st.number_input("MW Upper Bound", 1e3, 1e10, 1e7, step=1000000.0, format="%e")
+                mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=1000.0, format="%e", key="mw_min")
+                mw_max = st.number_input("MW Upper Bound", 1e3, 1e10, 1e7, step=1000000.0, format="%e", key="mw_max")
             else:
-                rt_min = st.number_input("RT Lower Bound (min)", 0.0, 100.0, 8.0, step=0.1)
-                rt_max = st.number_input("RT Upper Bound (min)", 0.0, 100.0, 19.0, step=0.1)
+                rt_min = st.number_input("RT Lower Bound (min)", 0.0, 100.0, 8.0, step=0.1, key="rt_min")
+                rt_max = st.number_input("RT Upper Bound (min)", 0.0, 100.0, 19.0, step=0.1, key="rt_max")
 
-            y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01)
-            y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01)
+            y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01, key="y_low")
+            y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01, key="y_high")
         with col2:
-            peaks_n = st.slider("Number Of Peaks", 1, 10, 4)
-            w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10)
-            w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10)
+            peaks_n = st.slider("Number Of Peaks", 1, 10, 4, key="peaks_n")
+            w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10, key="w_lo")
+            w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10, key="w_hi")
             baseline_method = st.selectbox(
                 "Baseline Correction Method",
                 ["None", "arpls", "flat", "linear", "quadratic"],
-                index=0
+                index=0,
+                key="baseline_method"
             )
 
             # Baseline ranges UI - only show for flat, linear, quadratic methods
@@ -195,11 +199,11 @@ def main():
 
         # Manual peaks
         unit_label = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
-        peaks_txt = st.text_input(f"Manual Peaks (comma list, blank=auto) in {unit_label}", "")
-        peaks_are_mw = st.checkbox(f"Manual Peaks Given As {unit_label}", True)
+        peaks_txt = st.text_input(f"Manual Peaks (comma list, blank=auto) in {unit_label}", "", key="peaks_txt")
+        peaks_are_mw = st.checkbox(f"Manual Peaks Given As {unit_label}", True, key="peaks_are_mw")
 
     # Peak Colors And Names
-    with st.expander("Peak Colors And Names", expanded=True):
+    with st.expander("Peak Colors And Names", expanded=False):
         st.write("Peak Names And Colors:")
         default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5",
                          "Peak 6", "Peak 7", "Peak 8", "Peak 9", "Peak 10"]
@@ -211,9 +215,9 @@ def main():
 
         cu1, cu2 = st.columns(2)
         with cu1:
-            original_data_name = st.text_input("Original Data Name", value="Original Data")
+            original_data_name = st.text_input("Original Data Name", value="Original Data", key="original_data_name")
         with cu2:
-            original_data_color = st.color_picker("Original Data Color", value="#ef476f")
+            original_data_color = st.color_picker("Original Data Color", value="#ef476f", key="original_data_color")
 
         for i in range(peaks_n):
             col1, col2 = st.columns(2)
@@ -232,10 +236,10 @@ def main():
                 )
                 custom_colors.append(color)
 
-        plot_sum = st.checkbox("Plot Sum Of Gaussians", False)
+        plot_sum = st.checkbox("Plot Sum Of Gaussians", False, key="plot_sum")
 
     # Appearance Settings
-    with st.expander("Appearance Settings", expanded=True):
+    with st.expander("Appearance Settings", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
             common_fonts = sorted([
@@ -245,21 +249,34 @@ def main():
                 "Calibri", "Cambria", "Candara", "Segoe UI", "Optima", "Futura"
             ])
             default_font_index = common_fonts.index("Times New Roman") if "Times New Roman" in common_fonts else 0
-            font_family = st.selectbox("Font Family", common_fonts, index=default_font_index)
-            font_size = st.number_input("Font Size", 8, 20, 12, step=1)
+            font_family = st.selectbox("Font Family", common_fonts, index=default_font_index, key="font_family")
+            font_size = st.number_input("Font Size", 8, 20, 12, step=1, key="font_size")
         with col2:
-            fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5)
-            fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5)
+            fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5, key="fig_width")
+            fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5, key="fig_height")
 
             if st.session_state.plot_x_axis == "MW":
-                x_label = st.text_input("X-Axis Label", "Molecular weight (g/mol)")
+                x_label = st.text_input("X-Axis Label", "Molecular weight (g/mol)", key="x_label")
             else:
-                x_label = st.text_input("X-Axis Label", "Retention Time (min)")
+                x_label = st.text_input("X-Axis Label", "Retention Time (min)", key="x_label")
 
-            x_label_style = st.selectbox("X-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
-            y_label = st.text_input("Y-Axis Label", "Normalized Response")
-            y_label_style = st.selectbox("Y-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
-            legend_style = st.selectbox("Legend Style", ["normal", "italic", "bold", "bold italic"], index=0)
+            x_label_style = st.selectbox("X-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0,
+                                         key="x_label_style")
+            y_label = st.text_input("Y-Axis Label", "Normalized Response", key="y_label")
+            y_label_style = st.selectbox("Y-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0,
+                                         key="y_label_style")
+            legend_style = st.selectbox("Legend Style", ["normal", "italic", "bold", "bold italic"], index=0,
+                                        key="legend_style")
+
+    # Add auto-update checkbox
+    auto_update = st.checkbox("Auto-update graph", value=True,
+                              help="Automatically update graph when parameters change",
+                              key="auto_update")
+
+    # Manual update button (always visible)
+    update_button = st.button("Update Graph",
+                              help="Manually update the graph (useful when auto-update is disabled)",
+                              key="update_button")
 
     # Utilities
     def parse_ranges(inputs, is_mw=True):
@@ -285,8 +302,49 @@ def main():
                     st.warning(f"Invalid value format: {inp}. Skipping.")
         return rngs
 
-    # Update button
-    if st.button("Update Graph"):
+    # Check if we need to update
+    current_params = {
+        'data_source': data_source,
+        'plot_x_axis': st.session_state.plot_x_axis,
+        'mw_min': mw_min if st.session_state.plot_x_axis == "MW" else None,
+        'mw_max': mw_max if st.session_state.plot_x_axis == "MW" else None,
+        'rt_min': rt_min if st.session_state.plot_x_axis == "RT" else None,
+        'rt_max': rt_max if st.session_state.plot_x_axis == "RT" else None,
+        'y_low': y_low,
+        'y_high': y_high,
+        'peaks_n': peaks_n,
+        'w_lo': w_lo,
+        'w_hi': w_hi,
+        'baseline_method': baseline_method,
+        'baseline_ranges': baseline_ranges_inputs,
+        'peaks_txt': peaks_txt,
+        'peaks_are_mw': peaks_are_mw,
+        'plot_sum': plot_sum,
+        'custom_names': custom_names,
+        'custom_colors': custom_colors,
+        'original_data_name': original_data_name,
+        'original_data_color': original_data_color,
+        'font_family': font_family,
+        'font_size': font_size,
+        'fig_width': fig_width,
+        'fig_height': fig_height,
+        'x_label': x_label,
+        'y_label': y_label,
+        'x_label_style': x_label_style,
+        'y_label_style': y_label_style,
+        'legend_style': legend_style
+    }
+
+    # Check if parameters have changed
+    params_changed = current_params != st.session_state.get('last_params', {})
+
+    # Update if auto-update is enabled and params changed, or if manual update was requested
+    should_update = (auto_update and params_changed) or update_button
+
+    if should_update:
+        # Store current params for comparison next time
+        st.session_state.last_params = current_params
+
         # Create placeholders for graph and table if they don't exist
         if st.session_state.graph_placeholder is None:
             st.session_state.graph_placeholder = st.empty()
