@@ -4,7 +4,6 @@ import numpy as np
 import requests
 import tempfile
 import os
-import time
 
 
 def _clear_query_params_and_rerun():
