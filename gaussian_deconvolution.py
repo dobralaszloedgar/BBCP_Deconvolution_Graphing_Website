@@ -69,6 +69,12 @@ def main():
         st.session_state.last_input_time = 0
     if 'update_pending' not in st.session_state:
         st.session_state.update_pending = False
+    if 'last_fig' not in st.session_state:
+        st.session_state.last_fig = None
+    if 'last_table' not in st.session_state:
+        st.session_state.last_table = None
+    if 'last_params_hash' not in st.session_state:
+        st.session_state.last_params_hash = None
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -122,7 +128,6 @@ def main():
                 cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt")
             else:
                 cal_file = None
-                st.info("No calibration needed for retention time plotting")
 
     # X-axis type selection
     x_axis_col1, x_axis_col2 = st.columns([1, 3])
@@ -140,8 +145,6 @@ def main():
     with x_axis_col2:
         if st.session_state.plot_x_axis == "MW" and cal_file is None and data_source == "Upload My Own Data":
             st.warning("Calibration file required for molecular weight plotting")
-        elif st.session_state.plot_x_axis == "RT":
-            st.info("Plotting against retention time (minutes)")
 
     # Initialize session state for expanders
     if 'expander_basic' not in st.session_state:
@@ -273,14 +276,24 @@ def main():
     else:
         should_update = False
 
-    # Mark input time when any widget changes
-    if st.session_state.get('widget_counter', 0) != st.session_state.get('prev_widget_counter', 0):
+    # Create a hash of current parameters to detect changes
+    params_hash = hash((
+        st.session_state.plot_x_axis,
+        mw_min if st.session_state.plot_x_axis == "MW" else rt_min,
+        mw_max if st.session_state.plot_x_axis == "MW" else rt_max,
+        y_low, y_high, peaks_n, w_lo, w_hi, baseline_method,
+        tuple(baseline_ranges_inputs), peaks_txt, peaks_are_mw,
+        original_data_name, original_data_color,
+        tuple(custom_names), tuple(custom_colors), plot_sum,
+        font_family, font_size, fig_width, fig_height,
+        x_label, y_label, x_label_style, y_label_style, legend_style
+    ))
+
+    # Mark input time when any parameter changes
+    if params_hash != st.session_state.get('last_params_hash'):
         st.session_state.last_input_time = current_time
         st.session_state.update_pending = True
-        st.session_state.prev_widget_counter = st.session_state.get('widget_counter', 0)
-
-    # Increment widget counter to detect changes
-    st.session_state.widget_counter = st.session_state.get('widget_counter', 0) + 1
+        st.session_state.last_params_hash = params_hash
 
     # Utilities
     def parse_ranges(inputs, is_mw=True):
@@ -308,11 +321,10 @@ def main():
 
     # Process when data file is present (calibration file only needed for MW)
     if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
-        # Show update status
-        if st.session_state.update_pending:
-            time_until_update = debounce_delay - (current_time - st.session_state.last_input_time)
-            if time_until_update > 0:
-                st.info(f"Graph will update in {time_until_update:.1f} seconds...")
+        # Always show the last graph while waiting for update
+        if st.session_state.last_fig is not None and st.session_state.last_table is not None:
+            st.pyplot(st.session_state.last_fig, dpi=600, width="content")
+            st.dataframe(st.session_state.last_table, width="content")
 
         if should_update:
             try:
@@ -373,6 +385,10 @@ def main():
                     y_label_style=y_label_style,
                     legend_style=legend_style
                 )
+
+                # Store the results
+                st.session_state.last_fig = fig
+                st.session_state.last_table = table
 
                 # Display results
                 st.pyplot(fig, dpi=600, width="content")
