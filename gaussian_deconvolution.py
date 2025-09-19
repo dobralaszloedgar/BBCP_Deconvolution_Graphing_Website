@@ -283,7 +283,7 @@ def main():
 
     # Debounce mechanism for automatic updates
     current_time = time.time()
-    debounce_delay = 2.0  # 2 seconds debounce
+    debounce_delay = 5.0  # 2 seconds debounce
 
     # Check if we should update the graph
     force_update = st.session_state.get('force_update', False)
