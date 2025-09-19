@@ -83,6 +83,8 @@ def main():
         st.session_state.force_update = False
     if 'toggle_state' not in st.session_state:
         st.session_state.toggle_state = "MW"  # Track toggle state separately
+    if 'update_in_progress' not in st.session_state:
+        st.session_state.update_in_progress = False
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -287,7 +289,8 @@ def main():
 
     # Check if we should update the graph
     force_update = st.session_state.get('force_update', False)
-    if (current_time - st.session_state.last_input_time > debounce_delay and st.session_state.update_pending) or force_update:
+    if (
+            current_time - st.session_state.last_input_time > debounce_delay and st.session_state.update_pending) or force_update:
         st.session_state.update_pending = False
         st.session_state.force_update = False
         st.session_state.last_update_time = current_time
@@ -353,8 +356,31 @@ def main():
             with st.session_state.table_placeholder:
                 st.dataframe(st.session_state.last_table, width="content")
 
-        if should_update:
+        if should_update and not st.session_state.update_in_progress:
             try:
+                # Set update in progress flag
+                st.session_state.update_in_progress = True
+
+                # Check if parameters changed during the update process
+                current_params_hash = hash((
+                    st.session_state.plot_x_axis,
+                    mw_min if st.session_state.plot_x_axis == "MW" else rt_min,
+                    mw_max if st.session_state.plot_x_axis == "MW" else rt_max,
+                    y_low, y_high, peaks_n, w_lo, w_hi, baseline_method,
+                    tuple(baseline_ranges_inputs), peaks_txt, peaks_are_mw,
+                    original_data_name, original_data_color,
+                    tuple(custom_names), tuple(custom_colors), plot_sum,
+                    font_family, font_size, fig_width, fig_height,
+                    x_label, y_label, x_label_style, y_label_style, legend_style
+                ))
+
+                # If parameters changed during update, restart the update process
+                if current_params_hash != st.session_state.last_params_hash:
+                    st.session_state.update_pending = True
+                    st.session_state.last_input_time = time.time()
+                    st.session_state.update_in_progress = False
+                    st.rerun()
+
                 is_mw = st.session_state.plot_x_axis == "MW"
                 baseline_ranges = parse_ranges(baseline_ranges_inputs, is_mw) if baseline_method not in ["None",
                                                                                                          "arpls"] else []
@@ -450,6 +476,8 @@ def main():
                             pass
                     except Exception:
                         pass
+                # Reset update in progress flag
+                st.session_state.update_in_progress = False
     else:
         if data_source == "Upload My Own Data":
             if st.session_state.plot_x_axis == "MW":
