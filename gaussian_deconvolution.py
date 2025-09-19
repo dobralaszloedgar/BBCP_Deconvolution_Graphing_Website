@@ -339,7 +339,7 @@ def main():
         return rngs
 
     # Fragment for graph and table updates
-    @st.experimental_fragment
+    @st.fragment
     def update_graph_fragment():
         if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
             # Create placeholders for graph and table if they don't exist
