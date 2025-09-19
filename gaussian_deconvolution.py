@@ -138,7 +138,7 @@ def main():
     with col1:
         # Toggle switch for X-axis selection
         use_mw = st.toggle(
-            "Retention Time <--> Molecular Weight",
+            "Retention Time ↔ Molecular Weight",
             value=(st.session_state.plot_x_axis == "MW"),
             help="Toggle between Molecular Weight and Retention Time for X-axis"
         )
