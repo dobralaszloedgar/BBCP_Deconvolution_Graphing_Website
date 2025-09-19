@@ -79,8 +79,6 @@ def main():
         st.session_state.graph_placeholder = None
     if 'table_placeholder' not in st.session_state:
         st.session_state.table_placeholder = None
-    if 'force_update' not in st.session_state:
-        st.session_state.force_update = False
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -135,39 +133,21 @@ def main():
             else:
                 cal_file = None
 
-    # X-axis type selection as toggle with clear labels
+    # X-axis type selection as toggle
     col1, col2 = st.columns([1, 3])
     with col1:
-        # Create a custom toggle with clear labels
-        st.markdown("**X-Axis Type**")
-
-        # Create a two-column layout for the toggle labels
-        toggle_col1, toggle_col2, toggle_col3 = st.columns([1, 2, 1])
-
-        with toggle_col1:
-            st.markdown("<div style='text-align: right; padding-top: 8px;'>Retention Time</div>",
-                        unsafe_allow_html=True)
-
-        with toggle_col2:
-            # Toggle switch for X-axis selection
-            use_mw = st.toggle(
-                "",
-                value=(st.session_state.plot_x_axis == "MW"),
-                help="Toggle between Retention Time and Molecular Weight for X-axis",
-                label_visibility="collapsed"
-            )
-
-        with toggle_col3:
-            st.markdown("<div style='text-align: left; padding-top: 8px;'>Molecular Weight</div>",
-                        unsafe_allow_html=True)
+        # Toggle switch for X-axis selection
+        use_mw = st.toggle(
+            "Retention Time <--> Molecular Weight",
+            value=(st.session_state.plot_x_axis == "MW"),
+            help="Toggle between Molecular Weight and Retention Time for X-axis"
+        )
 
         # Update session state based on toggle
         if use_mw:
             st.session_state.plot_x_axis = "MW"
-            st.session_state.force_update = True  # Force update when toggle changes
         else:
             st.session_state.plot_x_axis = "RT"
-            st.session_state.force_update = True  # Force update when toggle changes
 
     with col2:
         if st.session_state.plot_x_axis == "MW" and cal_file is None and data_source == "Upload My Own Data":
@@ -296,11 +276,8 @@ def main():
     debounce_delay = 2.0  # 2 seconds debounce
 
     # Check if we should update the graph
-    force_update = st.session_state.get('force_update', False)
-    if (
-            current_time - st.session_state.last_input_time > debounce_delay and st.session_state.update_pending) or force_update:
+    if current_time - st.session_state.last_input_time > debounce_delay and st.session_state.update_pending:
         st.session_state.update_pending = False
-        st.session_state.force_update = False
         st.session_state.last_update_time = current_time
         should_update = True
     else:
@@ -320,7 +297,7 @@ def main():
     ))
 
     # Mark input time when any parameter changes
-    if params_hash != st.session_state.get('last_params_hash') or force_update:
+    if params_hash != st.session_state.get('last_params_hash'):
         st.session_state.last_input_time = current_time
         st.session_state.update_pending = True
         st.session_state.last_params_hash = params_hash
