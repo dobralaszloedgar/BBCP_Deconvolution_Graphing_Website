@@ -338,124 +338,128 @@ def main():
                     st.warning(f"Invalid value format: {inp}. Skipping.")
         return rngs
 
-    # Process when data file is present (calibration file only needed for MW)
-    if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
-        # Create placeholders for graph and table if they don't exist
-        if st.session_state.graph_placeholder is None:
-            st.session_state.graph_placeholder = st.empty()
-        if st.session_state.table_placeholder is None:
-            st.session_state.table_placeholder = st.empty()
+    # Fragment for graph and table updates
+    @st.experimental_fragment
+    def update_graph_fragment():
+        if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
+            # Create placeholders for graph and table if they don't exist
+            if st.session_state.graph_placeholder is None:
+                st.session_state.graph_placeholder = st.empty()
+            if st.session_state.table_placeholder is None:
+                st.session_state.table_placeholder = st.empty()
 
-        # Display the last graph if available
-        if st.session_state.last_fig is not None and st.session_state.last_table is not None:
-            with st.session_state.graph_placeholder:
-                st.pyplot(st.session_state.last_fig, dpi=600, width="content")
-            with st.session_state.table_placeholder:
-                st.dataframe(st.session_state.last_table, width="content")
-
-        if should_update:
-            try:
-                is_mw = st.session_state.plot_x_axis == "MW"
-                baseline_ranges = parse_ranges(baseline_ranges_inputs, is_mw) if baseline_method not in ["None",
-                                                                                                         "arpls"] else []
-
-                # Load data (assuming tab-separated format with 2 header rows)
-                data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
-
-                # Load calibration if needed
-                calib = None
-                if is_mw and cal_file:
-                    calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2)
-                elif is_mw:
-                    st.error("Calibration file required for molecular weight plotting")
-                    st.stop()
-
-                # Manual peaks
-                manual_peaks = []
-                if peaks_txt.strip():
-                    for p in peaks_txt.split(","):
-                        try:
-                            manual_peaks.append(float(p.strip()))
-                        except ValueError:
-                            st.warning(f"Invalid peak value: {p}. Skipping.")
-
-                # Set limits based on x-axis type
-                if is_mw:
-                    x_lim = [mw_min, mw_max]
-                else:
-                    x_lim = [rt_min, rt_max]
-
-                # Run deconvolution
-                fig, table = run_deconvolution(
-                    data_array=data,
-                    calib_array=calib,
-                    x_axis_type=st.session_state.plot_x_axis,
-                    x_lim=x_lim,
-                    y_lim=[y_low, y_high],
-                    n_peaks=peaks_n,
-                    plot_sum=plot_sum,
-                    manual_peaks=manual_peaks,
-                    peaks_are_mw=peaks_are_mw,
-                    peak_names=custom_names,
-                    peak_colors=custom_colors,
-                    peak_width_range=[int(w_lo), int(w_hi)],
-                    baseline_method=baseline_method,
-                    baseline_ranges=baseline_ranges,
-                    original_data_color=original_data_color,
-                    original_data_label=original_data_name,
-                    font_family=font_family,
-                    font_size=font_size,
-                    fig_size=(fig_width, fig_height),
-                    x_label=x_label,
-                    y_label=y_label,
-                    x_label_style=x_label_style,
-                    y_label_style=y_label_style,
-                    legend_style=legend_style
-                )
-
-                # Store the results
-                st.session_state.last_fig = fig
-                st.session_state.last_table = table
-
-                # Update the display with the new graph and table
+            # Display the last graph if available
+            if st.session_state.last_fig is not None and st.session_state.last_table is not None:
                 with st.session_state.graph_placeholder:
-                    st.pyplot(fig, dpi=600, width="content")
+                    st.pyplot(st.session_state.last_fig, dpi=600, width="content")
                 with st.session_state.table_placeholder:
-                    st.dataframe(table, width="content")
+                    st.dataframe(st.session_state.last_table, width="content")
 
-            except Exception as e:
-                st.error(f"Error processing files: {str(e)}")
-                st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
-            finally:
-                # Clean up temporary files if example data was used
-                if data_source == "Use Example Data":
-                    try:
+            if should_update:
+                try:
+                    is_mw = st.session_state.plot_x_axis == "MW"
+                    baseline_ranges = parse_ranges(baseline_ranges_inputs, is_mw) if baseline_method not in ["None", "arpls"] else []
+
+                    # Load data (assuming tab-separated format with 2 header rows)
+                    data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
+
+                    # Load calibration if needed
+                    calib = None
+                    if is_mw and cal_file:
+                        calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2)
+                    elif is_mw:
+                        st.error("Calibration file required for molecular weight plotting")
+                        st.stop()
+
+                    # Manual peaks
+                    manual_peaks = []
+                    if peaks_txt.strip():
+                        for p in peaks_txt.split(","):
+                            try:
+                                manual_peaks.append(float(p.strip()))
+                            except ValueError:
+                                st.warning(f"Invalid peak value: {p}. Skipping.")
+
+                    # Set limits based on x-axis type
+                    if is_mw:
+                        x_lim = [mw_min, mw_max]
+                    else:
+                        x_lim = [rt_min, rt_max]
+
+                    # Run deconvolution
+                    fig, table = run_deconvolution(
+                        data_array=data,
+                        calib_array=calib,
+                        x_axis_type=st.session_state.plot_x_axis,
+                        x_lim=x_lim,
+                        y_lim=[y_low, y_high],
+                        n_peaks=peaks_n,
+                        plot_sum=plot_sum,
+                        manual_peaks=manual_peaks,
+                        peaks_are_mw=peaks_are_mw,
+                        peak_names=custom_names,
+                        peak_colors=custom_colors,
+                        peak_width_range=[int(w_lo), int(w_hi)],
+                        baseline_method=baseline_method,
+                        baseline_ranges=baseline_ranges,
+                        original_data_color=original_data_color,
+                        original_data_label=original_data_name,
+                        font_family=font_family,
+                        font_size=font_size,
+                        fig_size=(fig_width, fig_height),
+                        x_label=x_label,
+                        y_label=y_label,
+                        x_label_style=x_label_style,
+                        y_label_style=y_label_style,
+                        legend_style=legend_style
+                    )
+
+                    # Store the results
+                    st.session_state.last_fig = fig
+                    st.session_state.last_table = table
+
+                    # Update the display with the new graph and table
+                    with st.session_state.graph_placeholder:
+                        st.pyplot(fig, dpi=600, width="content")
+                    with st.session_state.table_placeholder:
+                        st.dataframe(table, width="content")
+
+                except Exception as e:
+                    st.error(f"Error processing files: {str(e)}")
+                    st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
+                finally:
+                    # Clean up temporary files if example data was used
+                    if data_source == "Use Example Data":
                         try:
-                            if cal_file:
-                                cal_file.close()
+                            try:
+                                if cal_file:
+                                    cal_file.close()
+                            except Exception:
+                                pass
+                            try:
+                                data_file.close()
+                            except Exception:
+                                pass
+                            try:
+                                if cal_file:
+                                    os.unlink(cal_file.name)
+                            except Exception:
+                                pass
+                            try:
+                                os.unlink(data_file.name)
+                            except Exception:
+                                pass
                         except Exception:
                             pass
-                        try:
-                            data_file.close()
-                        except Exception:
-                            pass
-                        try:
-                            if cal_file:
-                                os.unlink(cal_file.name)
-                        except Exception:
-                            pass
-                        try:
-                            os.unlink(data_file.name)
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
-    else:
-        if data_source == "Upload My Own Data":
-            if st.session_state.plot_x_axis == "MW":
-                st.info("Upload both calibration and data files to begin.")
-            else:
-                st.info("Upload data file to begin.")
+        else:
+            if data_source == "Upload My Own Data":
+                if st.session_state.plot_x_axis == "MW":
+                    st.info("Upload both calibration and data files to begin.")
+                else:
+                    st.info("Upload data file to begin.")
+
+    # Call the fragment
+    update_graph_fragment()
 
 
 if __name__ == "__main__":
