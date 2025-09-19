@@ -79,6 +79,10 @@ def main():
         st.session_state.graph_placeholder = None
     if 'table_placeholder' not in st.session_state:
         st.session_state.table_placeholder = None
+    if 'force_update' not in st.session_state:
+        st.session_state.force_update = False
+    if 'toggle_state' not in st.session_state:
+        st.session_state.toggle_state = "MW"  # Track toggle state separately
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -142,6 +146,12 @@ def main():
             value=(st.session_state.plot_x_axis == "MW"),
             help="Toggle between Molecular Weight and Retention Time for X-axis"
         )
+
+        # Check if toggle state changed
+        new_toggle_state = "MW" if use_mw else "RT"
+        if new_toggle_state != st.session_state.toggle_state:
+            st.session_state.toggle_state = new_toggle_state
+            st.session_state.force_update = True
 
         # Update session state based on toggle
         if use_mw:
@@ -276,8 +286,10 @@ def main():
     debounce_delay = 2.0  # 2 seconds debounce
 
     # Check if we should update the graph
-    if current_time - st.session_state.last_input_time > debounce_delay and st.session_state.update_pending:
+    force_update = st.session_state.get('force_update', False)
+    if (current_time - st.session_state.last_input_time > debounce_delay and st.session_state.update_pending) or force_update:
         st.session_state.update_pending = False
+        st.session_state.force_update = False
         st.session_state.last_update_time = current_time
         should_update = True
     else:
@@ -297,7 +309,7 @@ def main():
     ))
 
     # Mark input time when any parameter changes
-    if params_hash != st.session_state.get('last_params_hash'):
+    if params_hash != st.session_state.get('last_params_hash') or force_update:
         st.session_state.last_input_time = current_time
         st.session_state.update_pending = True
         st.session_state.last_params_hash = params_hash
