@@ -89,6 +89,8 @@ def main():
         st.session_state.last_checked_time = time.time()
     if 'auto_update' not in st.session_state:
         st.session_state.auto_update = True  # Add auto-update toggle state
+    if 'deconvolution_start_time' not in st.session_state:
+        st.session_state.deconvolution_start_time = 0
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -311,6 +313,8 @@ def main():
         st.session_state.last_input_time = time.time()
         st.session_state.update_pending = True
         st.session_state.last_params_hash = params_hash
+        # Reset deconvolution start time
+        st.session_state.deconvolution_start_time = 0
 
     # Utilities
     def parse_ranges(inputs, is_mw=True):
@@ -341,18 +345,31 @@ def main():
         if st.button("Update Graph"):
             st.session_state.force_update = True
             st.session_state.update_pending = True
+            st.session_state.deconvolution_start_time = 0
 
     # Check if we should update the graph
-    debounce_delay = 3.0  # Reduced from 5.0 to 1.0 for faster updates
+    debounce_delay = 3.0  # Wait 3 seconds before running deconvolution
     current_time = time.time()
     force_update = st.session_state.get('force_update', False)
 
+    # Check if we need to start the deconvolution timer
     if ((current_time - st.session_state.last_input_time > debounce_delay and
          st.session_state.update_pending and st.session_state.auto_update) or force_update):
-        st.session_state.update_pending = False
-        st.session_state.force_update = False
-        st.session_state.last_update_time = current_time
-        st.rerun()
+        # If we haven't set a deconvolution start time, set it now
+        if st.session_state.deconvolution_start_time == 0:
+            st.session_state.deconvolution_start_time = current_time
+
+        # Check if 3 seconds have passed since we set the deconvolution start time
+        if current_time - st.session_state.deconvolution_start_time >= debounce_delay:
+            st.session_state.update_pending = False
+            st.session_state.force_update = False
+            st.session_state.last_update_time = current_time
+            st.session_state.deconvolution_start_time = 0
+            st.rerun()
+        else:
+            # Show a countdown timer
+            remaining_time = debounce_delay - (current_time - st.session_state.deconvolution_start_time)
+            st.info(f"Waiting {remaining_time:.1f} seconds before updating graph...")
 
     # Create placeholders for graph and table if they don't exist
     if st.session_state.graph_placeholder is None:
@@ -364,7 +381,8 @@ def main():
     if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
         try:
             is_mw = st.session_state.plot_x_axis == "MW"
-            baseline_ranges = parse_ranges(baseline_ranges_inputs, is_mw) if baseline_method not in ["None", "arpls"] else []
+            baseline_ranges = parse_ranges(baseline_ranges_inputs, is_mw) if baseline_method not in ["None",
+                                                                                                     "arpls"] else []
 
             # Load data (assuming tab-separated format with 2 header rows)
             data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
