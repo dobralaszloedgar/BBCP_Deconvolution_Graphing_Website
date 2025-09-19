@@ -343,7 +343,7 @@ def main():
             st.session_state.update_pending = True
 
     # Check if we should update the graph
-    debounce_delay = 5.0  # Reduced from 5.0 to 1.0 for faster updates
+    debounce_delay = 3.0  # Reduced from 5.0 to 1.0 for faster updates
     current_time = time.time()
     force_update = st.session_state.get('force_update', False)
 
