@@ -75,6 +75,10 @@ def main():
         st.session_state.last_table = None
     if 'last_params_hash' not in st.session_state:
         st.session_state.last_params_hash = None
+    if 'graph_placeholder' not in st.session_state:
+        st.session_state.graph_placeholder = None
+    if 'table_placeholder' not in st.session_state:
+        st.session_state.table_placeholder = None
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -129,20 +133,23 @@ def main():
             else:
                 cal_file = None
 
-    # X-axis type selection
-    x_axis_col1, x_axis_col2 = st.columns([1, 3])
-    with x_axis_col1:
-        new_x_axis = st.radio("X-Axis", ["Molecular Weight", "Retention Time"],
-                              index=0 if st.session_state.plot_x_axis == "MW" else 1,
-                              key="x_axis_selector")
+    # X-axis type selection as toggle
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        # Toggle switch for X-axis selection
+        use_mw = st.toggle(
+            "Molecular Weight",
+            value=(st.session_state.plot_x_axis == "MW"),
+            help="Toggle between Molecular Weight and Retention Time for X-axis"
+        )
 
-        # Update session state if changed
-        if new_x_axis == "Molecular Weight":
+        # Update session state based on toggle
+        if use_mw:
             st.session_state.plot_x_axis = "MW"
         else:
             st.session_state.plot_x_axis = "RT"
 
-    with x_axis_col2:
+    with col2:
         if st.session_state.plot_x_axis == "MW" and cal_file is None and data_source == "Upload My Own Data":
             st.warning("Calibration file required for molecular weight plotting")
 
@@ -321,10 +328,18 @@ def main():
 
     # Process when data file is present (calibration file only needed for MW)
     if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
-        # Always show the last graph while waiting for update
+        # Create placeholders for graph and table if they don't exist
+        if st.session_state.graph_placeholder is None:
+            st.session_state.graph_placeholder = st.empty()
+        if st.session_state.table_placeholder is None:
+            st.session_state.table_placeholder = st.empty()
+
+        # Display the last graph if available
         if st.session_state.last_fig is not None and st.session_state.last_table is not None:
-            st.pyplot(st.session_state.last_fig, dpi=600, width="content")
-            st.dataframe(st.session_state.last_table, width="content")
+            with st.session_state.graph_placeholder:
+                st.pyplot(st.session_state.last_fig, dpi=600, width="content")
+            with st.session_state.table_placeholder:
+                st.dataframe(st.session_state.last_table, width="content")
 
         if should_update:
             try:
@@ -390,9 +405,11 @@ def main():
                 st.session_state.last_fig = fig
                 st.session_state.last_table = table
 
-                # Display results
-                st.pyplot(fig, dpi=600, width="content")
-                st.dataframe(table, width="content")
+                # Update the display with the new graph and table
+                with st.session_state.graph_placeholder:
+                    st.pyplot(fig, dpi=600, width="content")
+                with st.session_state.table_placeholder:
+                    st.dataframe(table, width="content")
 
             except Exception as e:
                 st.error(f"Error processing files: {str(e)}")
