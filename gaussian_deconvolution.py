@@ -83,6 +83,10 @@ def main():
         st.session_state.force_update = False
     if 'toggle_state' not in st.session_state:
         st.session_state.toggle_state = "MW"  # Track toggle state separately
+    if 'current_params_hash' not in st.session_state:
+        st.session_state.current_params_hash = None
+    if 'last_checked_time' not in st.session_state:
+        st.session_state.last_checked_time = time.time()
 
     # Back to launcher
     if st.button("← Back to Launcher"):
@@ -281,20 +285,6 @@ def main():
             y_label_style = st.selectbox("Y-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0)
             legend_style = st.selectbox("Legend Style", ["normal", "italic", "bold", "bold italic"], index=0)
 
-    # Debounce mechanism for automatic updates
-    current_time = time.time()
-    debounce_delay = 5.0  # 2 seconds debounce
-
-    # Check if we should update the graph
-    force_update = st.session_state.get('force_update', False)
-    if (current_time - st.session_state.last_input_time > debounce_delay and st.session_state.update_pending) or force_update:
-        st.session_state.update_pending = False
-        st.session_state.force_update = False
-        st.session_state.last_update_time = current_time
-        should_update = True
-    else:
-        should_update = False
-
     # Create a hash of current parameters to detect changes
     params_hash = hash((
         st.session_state.plot_x_axis,
@@ -308,9 +298,12 @@ def main():
         x_label, y_label, x_label_style, y_label_style, legend_style
     ))
 
+    # Store current params hash
+    st.session_state.current_params_hash = params_hash
+
     # Mark input time when any parameter changes
-    if params_hash != st.session_state.get('last_params_hash') or force_update:
-        st.session_state.last_input_time = current_time
+    if params_hash != st.session_state.get('last_params_hash') or st.session_state.force_update:
+        st.session_state.last_input_time = time.time()
         st.session_state.update_pending = True
         st.session_state.last_params_hash = params_hash
 
@@ -338,6 +331,22 @@ def main():
                     st.warning(f"Invalid value format: {inp}. Skipping.")
         return rngs
 
+    # Background process to check for changes and update fragments
+    @st.fragment(run_every=5)
+    def background_check():
+        current_time = time.time()
+
+        # Check if we should update the graph
+        debounce_delay = 5.0
+        force_update = st.session_state.get('force_update', False)
+
+        if (
+                current_time - st.session_state.last_input_time > debounce_delay and st.session_state.update_pending) or force_update:
+            st.session_state.update_pending = False
+            st.session_state.force_update = False
+            st.session_state.last_update_time = current_time
+            update_graph_fragment()
+
     # Fragment for graph and table updates
     @st.fragment
     def update_graph_fragment():
@@ -348,109 +357,102 @@ def main():
             if st.session_state.table_placeholder is None:
                 st.session_state.table_placeholder = st.empty()
 
-            # Display the last graph if available
-            if st.session_state.last_fig is not None and st.session_state.last_table is not None:
-                with st.session_state.graph_placeholder:
-                    st.pyplot(st.session_state.last_fig, dpi=600, width="content")
-                with st.session_state.table_placeholder:
-                    st.dataframe(st.session_state.last_table, width="content")
+            try:
+                is_mw = st.session_state.plot_x_axis == "MW"
+                baseline_ranges = parse_ranges(baseline_ranges_inputs, is_mw) if baseline_method not in ["None",
+                                                                                                         "arpls"] else []
 
-            if should_update:
-                try:
-                    is_mw = st.session_state.plot_x_axis == "MW"
-                    baseline_ranges = parse_ranges(baseline_ranges_inputs, is_mw) if baseline_method not in ["None", "arpls"] else []
+                # Load data (assuming tab-separated format with 2 header rows)
+                data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
 
-                    # Load data (assuming tab-separated format with 2 header rows)
-                    data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
+                # Load calibration if needed
+                calib = None
+                if is_mw and cal_file:
+                    calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2)
+                elif is_mw:
+                    st.error("Calibration file required for molecular weight plotting")
+                    return
 
-                    # Load calibration if needed
-                    calib = None
-                    if is_mw and cal_file:
-                        calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2)
-                    elif is_mw:
-                        st.error("Calibration file required for molecular weight plotting")
-                        st.stop()
-
-                    # Manual peaks
-                    manual_peaks = []
-                    if peaks_txt.strip():
-                        for p in peaks_txt.split(","):
-                            try:
-                                manual_peaks.append(float(p.strip()))
-                            except ValueError:
-                                st.warning(f"Invalid peak value: {p}. Skipping.")
-
-                    # Set limits based on x-axis type
-                    if is_mw:
-                        x_lim = [mw_min, mw_max]
-                    else:
-                        x_lim = [rt_min, rt_max]
-
-                    # Run deconvolution
-                    fig, table = run_deconvolution(
-                        data_array=data,
-                        calib_array=calib,
-                        x_axis_type=st.session_state.plot_x_axis,
-                        x_lim=x_lim,
-                        y_lim=[y_low, y_high],
-                        n_peaks=peaks_n,
-                        plot_sum=plot_sum,
-                        manual_peaks=manual_peaks,
-                        peaks_are_mw=peaks_are_mw,
-                        peak_names=custom_names,
-                        peak_colors=custom_colors,
-                        peak_width_range=[int(w_lo), int(w_hi)],
-                        baseline_method=baseline_method,
-                        baseline_ranges=baseline_ranges,
-                        original_data_color=original_data_color,
-                        original_data_label=original_data_name,
-                        font_family=font_family,
-                        font_size=font_size,
-                        fig_size=(fig_width, fig_height),
-                        x_label=x_label,
-                        y_label=y_label,
-                        x_label_style=x_label_style,
-                        y_label_style=y_label_style,
-                        legend_style=legend_style
-                    )
-
-                    # Store the results
-                    st.session_state.last_fig = fig
-                    st.session_state.last_table = table
-
-                    # Update the display with the new graph and table
-                    with st.session_state.graph_placeholder:
-                        st.pyplot(fig, dpi=600, width="content")
-                    with st.session_state.table_placeholder:
-                        st.dataframe(table, width="content")
-
-                except Exception as e:
-                    st.error(f"Error processing files: {str(e)}")
-                    st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
-                finally:
-                    # Clean up temporary files if example data was used
-                    if data_source == "Use Example Data":
+                # Manual peaks
+                manual_peaks = []
+                if peaks_txt.strip():
+                    for p in peaks_txt.split(","):
                         try:
-                            try:
-                                if cal_file:
-                                    cal_file.close()
-                            except Exception:
-                                pass
-                            try:
-                                data_file.close()
-                            except Exception:
-                                pass
-                            try:
-                                if cal_file:
-                                    os.unlink(cal_file.name)
-                            except Exception:
-                                pass
-                            try:
-                                os.unlink(data_file.name)
-                            except Exception:
-                                pass
+                            manual_peaks.append(float(p.strip()))
+                        except ValueError:
+                            st.warning(f"Invalid peak value: {p}. Skipping.")
+
+                # Set limits based on x-axis type
+                if is_mw:
+                    x_lim = [mw_min, mw_max]
+                else:
+                    x_lim = [rt_min, rt_max]
+
+                # Run deconvolution
+                fig, table = run_deconvolution(
+                    data_array=data,
+                    calib_array=calib,
+                    x_axis_type=st.session_state.plot_x_axis,
+                    x_lim=x_lim,
+                    y_lim=[y_low, y_high],
+                    n_peaks=peaks_n,
+                    plot_sum=plot_sum,
+                    manual_peaks=manual_peaks,
+                    peaks_are_mw=peaks_are_mw,
+                    peak_names=custom_names,
+                    peak_colors=custom_colors,
+                    peak_width_range=[int(w_lo), int(w_hi)],
+                    baseline_method=baseline_method,
+                    baseline_ranges=baseline_ranges,
+                    original_data_color=original_data_color,
+                    original_data_label=original_data_name,
+                    font_family=font_family,
+                    font_size=font_size,
+                    fig_size=(fig_width, fig_height),
+                    x_label=x_label,
+                    y_label=y_label,
+                    x_label_style=x_label_style,
+                    y_label_style=y_label_style,
+                    legend_style=legend_style
+                )
+
+                # Store the results
+                st.session_state.last_fig = fig
+                st.session_state.last_table = table
+
+                # Update the display with the new graph and table
+                with st.session_state.graph_placeholder:
+                    st.pyplot(fig, dpi=600, width="content")
+                with st.session_state.table_placeholder:
+                    st.dataframe(table, width="content")
+
+            except Exception as e:
+                st.error(f"Error processing files: {str(e)}")
+                st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
+            finally:
+                # Clean up temporary files if example data was used
+                if data_source == "Use Example Data":
+                    try:
+                        try:
+                            if cal_file:
+                                cal_file.close()
                         except Exception:
                             pass
+                        try:
+                            data_file.close()
+                        except Exception:
+                            pass
+                        try:
+                            if cal_file:
+                                os.unlink(cal_file.name)
+                        except Exception:
+                            pass
+                        try:
+                            os.unlink(data_file.name)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
         else:
             if data_source == "Upload My Own Data":
                 if st.session_state.plot_x_axis == "MW":
@@ -458,8 +460,12 @@ def main():
                 else:
                     st.info("Upload data file to begin.")
 
-    # Call the fragment
-    update_graph_fragment()
+    # Initial call to display graph
+    if st.session_state.last_fig is None:
+        update_graph_fragment()
+
+    # Start the background check
+    background_check()
 
 
 if __name__ == "__main__":
