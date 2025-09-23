@@ -1,11 +1,12 @@
 import streamlit as st
+from altair.vegalite.v5.theme import theme
 
 # Page config
 st.set_page_config(
     page_title="Gaussian Launcher",
     page_icon="🚀",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
 )
 
 # Dark-mode aware styles and hover "pop" via wrapper hover (works even with overlay link)
