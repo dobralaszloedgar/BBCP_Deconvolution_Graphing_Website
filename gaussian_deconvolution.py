@@ -28,7 +28,7 @@ def _set_page_meta(title: str, icon: str):
         st.set_page_config(
             page_title=title,
             page_icon=icon,
-            initial_sidebar_state="collapsed",
+            initial_sidebar_state="expanded",  # Changed to expanded since sidebar now contains settings
         )
     except Exception:
         # Fallback: update title + favicon via a tiny script (works when page_config already set)
@@ -75,63 +75,61 @@ def main():
     if 'last_params' not in st.session_state:
         st.session_state.last_params = {}
 
-    # Back to launcher
+    # Main content area - only graph and table
+    st.title("Gaussian Deconvolution")
+
+    # Back to launcher button at top
     if st.button("← Back to Launcher"):
         _clear_query_params_and_rerun()
 
-    st.title("Gaussian Deconvolution")
+    # SIDEBAR - All settings and parameters
+    with st.sidebar:
+        st.header("Settings")
 
-    # Default file URLs
-    DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
-    DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
+        # Data source selection
+        data_source = st.radio("Select Data Source:", ["Use Example Data", "Upload My Own Data"], key="data_source")
 
-    # Function to download default files
-    def download_default_file(url, filename):
-        try:
-            response = requests.get(url)
-            response.raise_for_status()
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
-            temp_file.write(response.content)
-            temp_file.close()
-            return temp_file.name
-        except Exception as e:
-            st.error(f"Error downloading default file: {str(e)}")
-            return None
+        cal_file = None
+        data_file = None
 
-    # Data source selection
-    data_source = st.radio("Select Data Source:", ["Use Example Data", "Upload My Own Data"], key="data_source")
+        if data_source == "Use Example Data":
+            st.info("Using example data to demonstrate the deconvolution process.")
+            with st.spinner("Loading example data..."):
+                # Default file URLs
+                DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
+                DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
 
-    cal_file = None
-    data_file = None
+                def download_default_file(url, filename):
+                    try:
+                        response = requests.get(url)
+                        response.raise_for_status()
+                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+                        temp_file.write(response.content)
+                        temp_file.close()
+                        return temp_file.name
+                    except Exception as e:
+                        st.error(f"Error downloading default file: {str(e)}")
+                        return None
 
-    if data_source == "Use Example Data":
-        st.info("Using example data to demonstrate the deconvolution process.")
-        with st.spinner("Loading example data..."):
-            cal_path = download_default_file(DEFAULT_CAL_URL, "default_cal.txt")
-            data_path = download_default_file(DEFAULT_DATA_URL, "default_data.txt")
-        if cal_path and data_path:
-            cal_file = open(cal_path, 'r')
-            data_file = open(data_path, 'r')
-            st.success("Example data loaded successfully!")
-            st.write("Calibration curve: RI Calibration Curve 2024 September.txt")
-            st.write("Chromatogram data: 11.15.2024_GB_GRAFT_PS-b-2PLA.txt")
+                cal_path = download_default_file(DEFAULT_CAL_URL, "default_cal.txt")
+                data_path = download_default_file(DEFAULT_DATA_URL, "default_data.txt")
+            if cal_path and data_path:
+                cal_file = open(cal_path, 'r')
+                data_file = open(data_path, 'r')
+                st.success("Example data loaded successfully!")
+                st.write("Calibration curve: RI Calibration Curve 2024 September.txt")
+                st.write("Chromatogram data: 11.15.2024_GB_GRAFT_PS-b-2PLA.txt")
+            else:
+                st.stop()
         else:
-            st.stop()
-    else:
-        col1, col2 = st.columns(2)
-        with col1:
             data_file = st.file_uploader("Chromatogram Data (.txt)", type="txt", key="data_uploader")
-        with col2:
             # Only show calibration upload if plotting against MW
             if st.session_state.plot_x_axis == "MW":
                 cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt", key="cal_uploader")
             else:
                 cal_file = None
 
-    # X-axis type selection as toggle
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        # Toggle switch for X-axis selection
+        # X-axis type selection as toggle
         use_mw = st.toggle(
             "Retention Time ↔ Molecular Weight",
             value=(st.session_state.plot_x_axis == "MW"),
@@ -150,14 +148,11 @@ def main():
         else:
             st.session_state.plot_x_axis = "RT"
 
-    with col2:
         if st.session_state.plot_x_axis == "MW" and cal_file is None and data_source == "Upload My Own Data":
             st.warning("Calibration file required for molecular weight plotting")
 
-    # Basic Parameters
-    with st.expander("Basic Parameters", expanded=False):
-        col1, col2 = st.columns(2)
-        with col1:
+        # Basic Parameters
+        with st.expander("Basic Parameters", expanded=False):
             if st.session_state.plot_x_axis == "MW":
                 mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=1000.0, format="%e", key="mw_min")
                 mw_max = st.number_input("MW Upper Bound", 1e3, 1e10, 1e7, step=1000000.0, format="%e", key="mw_max")
@@ -167,7 +162,7 @@ def main():
 
             y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01, key="y_low")
             y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01, key="y_high")
-        with col2:
+
             peaks_n = st.slider("Number Of Peaks", 1, 10, 4, key="peaks_n")
             w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10, key="w_lo")
             w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10, key="w_hi")
@@ -197,38 +192,33 @@ def main():
             else:
                 baseline_ranges_inputs = []
 
-        # Manual peaks
-        unit_label = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
-        peaks_txt = st.text_input(f"Manual Peaks (comma list, blank=auto) in {unit_label}", "", key="peaks_txt")
-        peaks_are_mw = st.checkbox(f"Manual Peaks Given As {unit_label}", True, key="peaks_are_mw")
+            # Manual peaks
+            unit_label = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
+            peaks_txt = st.text_input(f"Manual Peaks (comma list, blank=auto) in {unit_label}", "", key="peaks_txt")
+            peaks_are_mw = st.checkbox(f"Manual Peaks Given As {unit_label}", True, key="peaks_are_mw")
 
-    # Peak Colors And Names
-    with st.expander("Peak Colors And Names", expanded=False):
-        st.write("Peak Names And Colors:")
-        default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5",
-                         "Peak 6", "Peak 7", "Peak 8", "Peak 9", "Peak 10"]
-        default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c', '#a83232',
-                          '#a832a8', '#32a852', '#3264a8', '#a86432', '#6432a8']
+        # Peak Colors And Names
+        with st.expander("Peak Colors And Names", expanded=False):
+            st.write("Peak Names And Colors:")
+            default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5",
+                             "Peak 6", "Peak 7", "Peak 8", "Peak 9", "Peak 10"]
+            default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c', '#a83232',
+                              '#a832a8', '#32a852', '#3264a8', '#a86432', '#6432a8']
 
-        custom_names = []
-        custom_colors = []
+            custom_names = []
+            custom_colors = []
 
-        cu1, cu2 = st.columns(2)
-        with cu1:
             original_data_name = st.text_input("Original Data Name", value="Original Data", key="original_data_name")
-        with cu2:
             original_data_color = st.color_picker("Original Data Color", value="#ef476f", key="original_data_color")
 
-        for i in range(peaks_n):
-            col1, col2 = st.columns(2)
-            with col1:
+            for i in range(peaks_n):
                 name = st.text_input(
                     f"Peak {i + 1} Name",
                     value=default_names[i] if i < len(default_names) else f"Peak {i + 1}",
                     key=f"name_{i}"
                 )
                 custom_names.append(name)
-            with col2:
+
                 color = st.color_picker(
                     f"Peak {i + 1} Color",
                     value=default_colors[i] if i < len(default_colors) else '#000000',
@@ -236,12 +226,10 @@ def main():
                 )
                 custom_colors.append(color)
 
-        plot_sum = st.checkbox("Plot Sum Of Gaussians", False, key="plot_sum")
+            plot_sum = st.checkbox("Plot Sum Of Gaussians", False, key="plot_sum")
 
-    # Appearance Settings
-    with st.expander("Appearance Settings", expanded=False):
-        col1, col2 = st.columns(2)
-        with col1:
+        # Appearance Settings
+        with st.expander("Appearance Settings", expanded=False):
             common_fonts = sorted([
                 "Arial", "Times New Roman", "Helvetica", "Verdana", "Georgia",
                 "Courier New", "Tahoma", "Trebuchet MS", "Palatino", "Garamond",
@@ -251,7 +239,7 @@ def main():
             default_font_index = common_fonts.index("Times New Roman") if "Times New Roman" in common_fonts else 0
             font_family = st.selectbox("Font Family", common_fonts, index=default_font_index, key="font_family")
             font_size = st.number_input("Font Size", 8, 20, 12, step=1, key="font_size")
-        with col2:
+
             fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5, key="fig_width")
             fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5, key="fig_height")
 
@@ -268,15 +256,22 @@ def main():
             legend_style = st.selectbox("Legend Style", ["normal", "italic", "bold", "bold italic"], index=0,
                                         key="legend_style")
 
-    # Add auto-update checkbox
-    auto_update = st.checkbox("Auto-update graph", value=True,
-                              help="Automatically update graph when parameters change",
-                              key="auto_update")
+        # Auto-update checkbox and update button
+        auto_update = st.checkbox("Auto-update graph", value=True,
+                                  help="Automatically update graph when parameters change",
+                                  key="auto_update")
 
-    # Manual update button (always visible)
-    update_button = st.button("Update Graph",
-                              help="Manually update the graph (useful when auto-update is disabled)",
-                              key="update_button")
+        update_button = st.button("Update Graph",
+                                  help="Manually update the graph (useful when auto-update is disabled)",
+                                  key="update_button",
+                                  use_container_width=True)
+
+    # MAIN CONTENT AREA - Only graph and table
+    # Create placeholders for graph and table if they don't exist
+    if st.session_state.graph_placeholder is None:
+        st.session_state.graph_placeholder = st.empty()
+    if st.session_state.table_placeholder is None:
+        st.session_state.table_placeholder = st.empty()
 
     # Utilities
     def parse_ranges(inputs, is_mw=True):
@@ -345,12 +340,6 @@ def main():
         # Store current params for comparison next time
         st.session_state.last_params = current_params
 
-        # Create placeholders for graph and table if they don't exist
-        if st.session_state.graph_placeholder is None:
-            st.session_state.graph_placeholder = st.empty()
-        if st.session_state.table_placeholder is None:
-            st.session_state.table_placeholder = st.empty()
-
         # Update graph and table
         if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
             try:
@@ -418,9 +407,9 @@ def main():
 
                 # Update the display with the new graph and table
                 with st.session_state.graph_placeholder:
-                    st.pyplot(fig, dpi=600, width="content")
+                    st.pyplot(fig, dpi=600, use_container_width=True)
                 with st.session_state.table_placeholder:
-                    st.dataframe(table, width="content")
+                    st.dataframe(table, use_container_width=True)
 
             except Exception as e:
                 st.error(f"Error processing files: {str(e)}")
@@ -458,15 +447,10 @@ def main():
 
     # Display the last graph if it exists
     if st.session_state.last_fig is not None and st.session_state.last_table is not None:
-        if st.session_state.graph_placeholder is None:
-            st.session_state.graph_placeholder = st.empty()
-        if st.session_state.table_placeholder is None:
-            st.session_state.table_placeholder = st.empty()
-
         with st.session_state.graph_placeholder:
-            st.pyplot(st.session_state.last_fig, dpi=600, width="content")
+            st.pyplot(st.session_state.last_fig, dpi=600, use_container_width=True)
         with st.session_state.table_placeholder:
-            st.dataframe(st.session_state.last_table, width="content")
+            st.dataframe(st.session_state.last_table, use_container_width=True)
 
 
 if __name__ == "__main__":
