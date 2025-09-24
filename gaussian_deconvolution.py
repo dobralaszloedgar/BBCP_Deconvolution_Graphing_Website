@@ -1,5 +1,4 @@
 from Deconvolution import run_deconvolution
-from Integration import setup_integration_ui
 import streamlit as st
 import numpy as np
 import requests
@@ -40,7 +39,7 @@ def _set_page_meta(title: str, icon: str):
             const setTitle = (t) => {{ document.title = t; }};
             const setFavicon = (emoji) => {{
                 const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>
-                               <text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='52'>{emoji}</text>
+                               <text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='52'>{{emoji}}</text>
                              </svg>`;
                 const url = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
                 let link = document.querySelector("link[rel='icon']") || document.createElement('link');
@@ -102,6 +101,58 @@ def parse_ranges(inputs, is_mw=True):
             except ValueError:
                 st.warning(f"Invalid value format: {inp}. Skipping.")
     return rngs
+
+
+def _setup_integration_sidebar_ui():
+    """
+    Renders the integration range controls in the sidebar if integration is
+    enabled and peak data is available from a previous run.
+    This function modifies st.session_state.peak_integration_ranges directly.
+    """
+    if not st.session_state.get('integration_enabled', False):
+        return
+
+    # Check if we have peak names from a previous run to build the UI
+    if 'gaussian_table' in st.session_state and st.session_state.gaussian_table is not None and not st.session_state.gaussian_table.empty:
+        st.sidebar.subheader("Integration Ranges")
+        peak_names = st.session_state.gaussian_table['Peak'].tolist()
+        x_plot = st.session_state.get('x_plot_data')
+
+        if x_plot is not None:
+            integration_ranges = st.session_state.get('peak_integration_ranges', {})
+            x_min, x_max = float(np.min(x_plot)), float(np.max(x_plot))
+
+            for peak_name in peak_names:
+                if peak_name not in integration_ranges:
+                    integration_ranges[peak_name] = {"enabled": True, "left": x_min, "right": x_max}
+
+                with st.sidebar.expander(f"Range for {peak_name}", expanded=False):
+                    enabled = st.checkbox("Integrate", value=integration_ranges[peak_name].get("enabled", True),
+                                          key=f"int_enabled_{peak_name}")
+
+                    if enabled:
+                        x_axis_type = st.session_state.plot_x_axis
+                        format_str = "%.2f" if x_axis_type == "RT" else "%e"
+                        step = 0.01 if x_axis_type == "RT" else 100.0
+
+                        left, right = st.slider(
+                            "Range",
+                            min_value=x_min,
+                            max_value=x_max,
+                            value=(float(integration_ranges[peak_name].get("left", x_min)),
+                                   float(integration_ranges[peak_name].get("right", x_max))),
+                            key=f"int_range_{peak_name}",
+                            format=format_str,
+                            step=step
+                        )
+                        integration_ranges[peak_name] = {"enabled": True, "left": left, "right": right}
+                    else:
+                        integration_ranges[peak_name] = {"enabled": False, "left": x_min, "right": x_max}
+
+            # Persist changes back to session state
+            st.session_state.peak_integration_ranges = integration_ranges
+    else:
+        st.sidebar.info("Run deconvolution once to define integration ranges.")
 
 
 def setup_sidebar_ui():
@@ -242,12 +293,13 @@ def setup_sidebar_ui():
     with st.expander("Peak Integration", expanded=False):
         integration_enabled = st.checkbox(
             "Enable Peak Integration",
-            value=st.session_state.integration_enabled,
-            key="integration_enabled"
+            value=st.session_state.get('integration_enabled', False),
+            key="integration_enabled_checkbox"
         )
-
-        # Store integration state
         st.session_state.integration_enabled = integration_enabled
+
+    # Call the new function to render integration controls if enabled
+    _setup_integration_sidebar_ui()
 
     # Appearance Settings
     with st.expander("Appearance Settings", expanded=False):
@@ -318,7 +370,8 @@ def setup_sidebar_ui():
         'x_label_style': x_label_style,
         'y_label_style': y_label_style,
         'legend_style': legend_style,
-        'integration_enabled': integration_enabled
+        'integration_enabled': st.session_state.integration_enabled,
+        'auto_update': auto_update
     }
 
     return params_dict, data_file, cal_file
@@ -352,6 +405,8 @@ def main():
         st.session_state.integration_enabled = False
     if 'peak_integration_ranges' not in st.session_state:
         st.session_state.peak_integration_ranges = {}
+    if 'last_integration_ranges' not in st.session_state:
+        st.session_state.last_integration_ranges = {}
     if 'x_plot_data' not in st.session_state:
         st.session_state.x_plot_data = None
     if 'y_corrected_data' not in st.session_state:
@@ -375,13 +430,12 @@ def main():
     if st.session_state.table_placeholder is None:
         st.session_state.table_placeholder = st.empty()
 
-    # Check if parameters have changed
+    # Check for changes to trigger an update
     current_params = params_dict
     params_changed = current_params != st.session_state.get('last_params', {})
 
-    # Update if auto-update is enabled and params changed, or if manual update was requested
-    should_update = (params_dict['auto_update'] and params_changed) or st.session_state.get('update_button_clicked',
-                                                                                            False)
+    current_integration_ranges = st.session_state.get('peak_integration_ranges', {})
+    integration_ranges_changed = current_integration_ranges != st.session_state.get('last_integration_ranges', {})
 
     # Handle update button click
     if 'update_button' in st.session_state and st.session_state.update_button:
@@ -390,9 +444,17 @@ def main():
     else:
         st.session_state.update_button_clicked = False
 
+    # Decide if an update is needed
+    auto_update_on = params_dict.get('auto_update', True)
+    if (auto_update_on and (params_changed or integration_ranges_changed)) or st.session_state.update_button_clicked:
+        should_update = True
+    else:
+        should_update = False
+
     if should_update:
         # Store current params for comparison next time
         st.session_state.last_params = current_params
+        st.session_state.last_integration_ranges = current_integration_ranges.copy()
 
         # Update graph and table
         if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
@@ -469,43 +531,6 @@ def main():
                 st.session_state.x_plot_data = x_plot
                 st.session_state.y_corrected_data = y_corrected
 
-                # Setup integration UI if enabled
-                if params_dict[
-                    'integration_enabled'] and gaussian_results_df is not None and not gaussian_results_df.empty:
-                    peak_names = gaussian_results_df['Peak'].tolist()
-                    total_area, updated_ranges = setup_integration_ui(
-                        peak_names,
-                        st.session_state.plot_x_axis,
-                        x_plot,
-                        y_corrected,
-                        st.session_state.peak_integration_ranges,
-                        params_dict['integration_enabled']
-                    )
-                    st.session_state.peak_integration_ranges = updated_ranges
-
-                # Update the display with the new graph and tables
-                with st.session_state.graph_placeholder:
-                    st.pyplot(fig, dpi=600, use_container_width=True)
-
-                # Display tables in tabs
-                if gaussian_results_df is not None and not gaussian_results_df.empty:
-                    tab1, tab2, tab3 = st.tabs(["Gaussian Results", "Integration Results", "Molecular Weight Results"])
-
-                    with tab1:
-                        st.dataframe(gaussian_results_df, use_container_width=True)
-
-                    with tab2:
-                        if integration_results_df is not None and not integration_results_df.empty:
-                            st.dataframe(integration_results_df, use_container_width=True)
-                        else:
-                            st.info("Enable peak integration to see integration results")
-
-                    with tab3:
-                        if mw_results_df is not None and not mw_results_df.empty:
-                            st.dataframe(mw_results_df, use_container_width=True)
-                        else:
-                            st.info("Molecular weight results available only in MW mode with integration enabled")
-
             except Exception as e:
                 st.error(f"Error processing files: {str(e)}")
                 st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
@@ -532,27 +557,28 @@ def main():
 
     # Display the last graph if it exists
     if st.session_state.last_fig is not None:
-        with st.session_state.graph_placeholder:
+        with st.session_state.graph_placeholder.container():
             st.pyplot(st.session_state.last_fig, dpi=600, use_container_width=True)
 
         # Display tables if they exist
-        if st.session_state.gaussian_table is not None and not st.session_state.gaussian_table.empty:
-            tab1, tab2, tab3 = st.tabs(["Gaussian Results", "Integration Results", "Molecular Weight Results"])
+        with st.session_state.table_placeholder.container():
+            if st.session_state.gaussian_table is not None and not st.session_state.gaussian_table.empty:
+                tab1, tab2, tab3 = st.tabs(["Gaussian Results", "Integration Results", "Molecular Weight Results"])
 
-            with tab1:
-                st.dataframe(st.session_state.gaussian_table, use_container_width=True)
+                with tab1:
+                    st.dataframe(st.session_state.gaussian_table, use_container_width=True)
 
-            with tab2:
-                if st.session_state.integration_table is not None and not st.session_state.integration_table.empty:
-                    st.dataframe(st.session_state.integration_table, use_container_width=True)
-                else:
-                    st.info("Enable peak integration to see integration results")
+                with tab2:
+                    if st.session_state.integration_table is not None and not st.session_state.integration_table.empty:
+                        st.dataframe(st.session_state.integration_table, use_container_width=True)
+                    else:
+                        st.info("Enable peak integration to see integration results")
 
-            with tab3:
-                if st.session_state.mw_table is not None and not st.session_state.mw_table.empty:
-                    st.dataframe(st.session_state.mw_table, use_container_width=True)
-                else:
-                    st.info("Molecular weight results available only in MW mode with integration enabled")
+                with tab3:
+                    if st.session_state.mw_table is not None and not st.session_state.mw_table.empty:
+                        st.dataframe(st.session_state.mw_table, use_container_width=True)
+                    else:
+                        st.info("Molecular weight results available only in MW mode with integration enabled")
 
 
 if __name__ == "__main__":
