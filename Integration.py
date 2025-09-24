@@ -6,6 +6,7 @@ import streamlit as st
 def integrate_peak_region(x_data, y_data, left_bound, right_bound):
     """
     Integrate a region of the chromatogram between left and right bounds
+    Only integrates positive values (above baseline)
 
     Args:
         x_data: X-axis data (MW or RT)
@@ -14,17 +15,21 @@ def integrate_peak_region(x_data, y_data, left_bound, right_bound):
         right_bound: Right integration boundary
 
     Returns:
-        area: Integrated area under the curve
+        area: Integrated area under the curve (only positive values)
     """
     mask = (x_data >= left_bound) & (x_data <= right_bound)
     if np.sum(mask) == 0:
         return 0.0
-    return np.trapz(y_data[mask], x_data[mask])
+
+    # Only integrate positive values (above baseline)
+    y_positive = np.maximum(y_data[mask], 0)
+    return np.trapz(y_positive, x_data[mask])
 
 
 def calculate_molecular_weight_averages(x_mw, y_signal, peak_ranges):
     """
     Calculate molecular weight averages (Mn, Mw, Đ) for integration regions
+    Only uses positive signal values (above baseline)
 
     Args:
         x_mw: Molecular weight values
@@ -47,6 +52,9 @@ def calculate_molecular_weight_averages(x_mw, y_signal, peak_ranges):
 
             x_region = x_mw[mask]
             y_region = y_signal[mask]
+
+            # Ensure we only use positive values (above baseline)
+            y_region = np.maximum(y_region, 0)
 
             # Calculate molecular weight averages
             # Number average molecular weight (Mn)
@@ -134,7 +142,7 @@ def setup_integration_ui(peak_names, x_axis_type, x_plot_data, y_corrected_data,
                         peak_integration_ranges[peak_name]["right"] = right_bound
 
                     with col4:
-                        # Calculate and display area
+                        # Calculate and display area (only positive values)
                         area = integrate_peak_region(
                             x_plot_data,
                             y_corrected_data,
@@ -144,9 +152,19 @@ def setup_integration_ui(peak_names, x_axis_type, x_plot_data, y_corrected_data,
                         st.metric(f"Area {peak_name}", f"{area:.4f}")
                         total_area += area
 
-            # Display total integrated area
+            # Display total integrated area and percentage breakdown
             if total_area > 0:
                 st.metric("Total Integrated Area", f"{total_area:.4f}")
+
+                # Calculate and display percentages for each peak
+                st.write("Area percentages:")
+                for i, peak_name in enumerate(peak_names):
+                    if peak_integration_ranges[peak_name]["enabled"]:
+                        left = peak_integration_ranges[peak_name]["left"]
+                        right = peak_integration_ranges[peak_name]["right"]
+                        area = integrate_peak_region(x_plot_data, y_corrected_data, left, right)
+                        percentage = (area / total_area) * 100 if total_area > 0 else 0
+                        st.write(f"{peak_name}: {percentage:.1f}%")
 
         else:
             st.info("Run deconvolution first to enable peak integration")

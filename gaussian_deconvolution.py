@@ -125,7 +125,21 @@ def _setup_integration_sidebar_ui():
 
             for peak_name in peak_names:
                 if peak_name not in integration_ranges:
-                    integration_ranges[peak_name] = {"enabled": True, "left": x_min, "right": x_max}
+                    # Set default range around the peak center if available
+                    peak_row = st.session_state.gaussian_table[st.session_state.gaussian_table['Peak'] == peak_name]
+                    if not peak_row.empty:
+                        if x_axis_type == "MW":
+                            peak_center = float(peak_row.iloc[0]['Mn (g/mol)'])
+                            default_left = peak_center * 0.8
+                            default_right = peak_center * 1.2
+                        else:
+                            peak_center = float(peak_row.iloc[0]['RT (min)'])
+                            default_left = peak_center - 0.5
+                            default_right = peak_center + 0.5
+                    else:
+                        default_left, default_right = x_min, x_max
+
+                    integration_ranges[peak_name] = {"enabled": True, "left": default_left, "right": default_right}
 
                 with st.sidebar.expander(f"Range for {peak_name}", expanded=False):
                     enabled = st.checkbox("Integrate", value=integration_ranges[peak_name].get("enabled", True),
@@ -135,44 +149,94 @@ def _setup_integration_sidebar_ui():
                         current_left = float(integration_ranges[peak_name].get("left", x_min))
                         current_right = float(integration_ranges[peak_name].get("right", x_max))
 
-                        # --- Slider for quick adjustments ---
+                        # Ensure left < right
+                        if current_right < current_left:
+                            current_right = current_left
+
+                        # --- Logarithmic slider for MW, linear for RT ---
                         if x_axis_type == "MW":
                             # Use logarithmic slider for MW
-                            safe_min = max(x_min, 1.0)
+                            safe_min = max(x_min, 1.0)  # Avoid log(0)
                             log_min, log_max = np.log10(safe_min), np.log10(x_max)
 
                             val_left = np.log10(max(safe_min, current_left))
                             val_right = np.log10(max(safe_min, current_right))
 
-                            if val_right < val_left: val_right = val_left
+                            if val_right < val_left:
+                                val_right = val_left
 
-                            log_range = st.slider("Adjust Range (Log Scale)", log_min, log_max, (val_left, val_right),
+                            log_range = st.slider("Adjust Range (Log Scale)",
+                                                  min_value=log_min,
+                                                  max_value=log_max,
+                                                  value=(val_left, val_right),
                                                   key=f"int_slider_{peak_name}")
+
                             slider_left, slider_right = 10 ** log_range[0], 10 ** log_range[1]
                         else:
                             # Use linear slider for RT
-                            slider_left, slider_right = st.slider("Adjust Range", x_min, x_max,
-                                                                  (current_left, current_right),
-                                                                  step=0.01, key=f"int_slider_{peak_name}")
+                            slider_left, slider_right = st.slider("Adjust Range",
+                                                                  min_value=x_min,
+                                                                  max_value=x_max,
+                                                                  value=(current_left, current_right),
+                                                                  step=0.01,
+                                                                  key=f"int_slider_{peak_name}")
 
                         # --- Number inputs for precise control ---
+                        st.write("Precise bounds:")
                         left_col, right_col = st.columns(2)
                         with left_col:
-                            final_left = st.number_input("Lower Bound", min_value=x_min, max_value=x_max,
-                                                         value=slider_left, key=f"int_left_{peak_name}",
+                            final_left = st.number_input("Lower Bound",
+                                                         min_value=float(x_min),
+                                                         max_value=float(x_max),
+                                                         value=float(slider_left),
+                                                         key=f"int_left_{peak_name}",
                                                          format="%e" if x_axis_type == "MW" else "%.3f",
                                                          step=100.0 if x_axis_type == "MW" else 0.01)
                         with right_col:
-                            final_right = st.number_input("Upper Bound", min_value=x_min, max_value=x_max,
-                                                          value=slider_right, key=f"int_right_{peak_name}",
+                            final_right = st.number_input("Upper Bound",
+                                                          min_value=float(x_min),
+                                                          max_value=float(x_max),
+                                                          value=float(slider_right),
+                                                          key=f"int_right_{peak_name}",
                                                           format="%e" if x_axis_type == "MW" else "%.3f",
                                                           step=100.0 if x_axis_type == "MW" else 0.01)
 
+                        # Ensure final_left < final_right
+                        if final_right < final_left:
+                            final_right = final_left
+
                         integration_ranges[peak_name] = {"enabled": True, "left": final_left, "right": final_right}
+
+                        # Show current area for this peak
+                        if st.session_state.get('y_corrected_data') is not None:
+                            y_positive = np.maximum(st.session_state.y_corrected_data, 0)
+                            mask = (x_plot >= final_left) & (x_plot <= final_right)
+                            if np.sum(mask) > 0:
+                                area = np.trapz(y_positive[mask], x_plot[mask])
+                                st.metric(f"Area for {peak_name}", f"{area:.4f}")
                     else:
                         integration_ranges[peak_name] = {"enabled": False, "left": x_min, "right": x_max}
 
             st.session_state.peak_integration_ranges = integration_ranges
+
+            # Show total integration area percentage
+            if st.session_state.get('y_corrected_data') is not None:
+                total_area = 0
+                enabled_areas = []
+
+                for peak_name in peak_names:
+                    if integration_ranges[peak_name]["enabled"]:
+                        left = integration_ranges[peak_name]["left"]
+                        right = integration_ranges[peak_name]["right"]
+                        y_positive = np.maximum(st.session_state.y_corrected_data, 0)
+                        mask = (x_plot >= left) & (x_plot <= right)
+                        if np.sum(mask) > 0:
+                            area = np.trapz(y_positive[mask], x_plot[mask])
+                            enabled_areas.append(area)
+
+                if enabled_areas:
+                    total_area = sum(enabled_areas)
+                    st.sidebar.metric("Total Integration Area", f"{total_area:.4f}")
     else:
         st.sidebar.info("Run deconvolution once to define integration ranges.")
 

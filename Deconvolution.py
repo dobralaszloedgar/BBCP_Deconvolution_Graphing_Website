@@ -259,6 +259,9 @@ def calculate_molecular_weight_averages(x_mw, y_signal, peak_ranges):
             x_region = x_mw[mask]
             y_region = y_signal[mask]
 
+            # Ensure we only integrate positive values (above baseline)
+            y_region = np.maximum(y_region, 0)
+
             # Calculate molecular weight averages
             # Number average molecular weight (Mn)
             mn = np.trapz(y_region, x_region) / np.trapz(y_region / x_region, x_region)
@@ -333,9 +336,19 @@ def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, pea
         for peak_name, ranges in integration_ranges.items():
             if ranges["enabled"]:
                 left, right = ranges["left"], ranges["right"]
-                ax.axvline(x=left, color='red', linestyle=':', alpha=0.7, linewidth=1)
-                ax.axvline(x=right, color='red', linestyle=':', alpha=0.7, linewidth=1)
-                ax.axvspan(left, right, alpha=0.1, color='red')
+
+                # Add vertical dotted lines only from baseline to curve
+                mask_range = (x_plot >= left) & (x_plot <= right)
+                if np.any(mask_range):
+                    x_range = x_plot[mask_range]
+                    y_range = y_corrected[mask_range]
+
+                    # Add vertical lines at boundaries
+                    ax.axvline(x=left, color='red', linestyle=':', alpha=0.7, linewidth=1)
+                    ax.axvline(x=right, color='red', linestyle=':', alpha=0.7, linewidth=1)
+
+                    # Fill only the area from baseline (y=0) to the curve
+                    ax.fill_between(x_range, 0, y_range, alpha=0.1, color='red')
 
     # Format plot
     if x_axis_type == "MW":
@@ -594,20 +607,32 @@ def run_deconvolution(
                     left = integration_ranges[peak_name]["left"]
                     right = integration_ranges[peak_name]["right"]
 
-                    # Integrate the baseline-corrected data over the specified range
+                    # Integrate the baseline-corrected data over the specified range (only positive values)
                     mask = (x_plot >= left) & (x_plot <= right)
                     if np.sum(mask) > 0:
-                        area = np.trapz(y_corrected[mask], x_plot[mask])
+                        # Only integrate positive values (above baseline)
+                        y_positive = np.maximum(y_corrected[mask], 0)
+                        area = np.trapz(y_positive, x_plot[mask])
                         integration_areas.append(area)
                     else:
                         integration_areas.append(0.0)
                 else:
                     integration_areas.append(0.0)
 
-            # Calculate percentages
-            total_integration_area = sum(integration_areas)
+            # Calculate percentages based on total integration area (sum of enabled peaks only)
+            enabled_areas = [area for i, area in enumerate(integration_areas)
+                             if peak_names[i] in integration_ranges and integration_ranges[peak_names[i]]["enabled"]]
+            total_integration_area = sum(enabled_areas) if enabled_areas else 0
+
             if total_integration_area > 0:
-                integration_percentages = [(area / total_integration_area) * 100 for area in integration_areas]
+                integration_percentages = []
+                for i, area in enumerate(integration_areas):
+                    peak_name = peak_names[i]
+                    if peak_name in integration_ranges and integration_ranges[peak_name]["enabled"]:
+                        pct = (area / total_integration_area) * 100
+                    else:
+                        pct = 0.0
+                    integration_percentages.append(pct)
             else:
                 integration_percentages = [0.0] * len(integration_areas)
 
