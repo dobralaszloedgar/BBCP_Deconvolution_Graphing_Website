@@ -4,6 +4,7 @@ import numpy as np
 import requests
 import tempfile
 import os
+import math
 
 
 def _clear_query_params_and_rerun():
@@ -116,9 +117,6 @@ def main():
             if cal_path and data_path:
                 cal_file = open(cal_path, 'r')
                 data_file = open(data_path, 'r')
-                st.success("Example data loaded successfully!")
-                st.write("Calibration curve: RI Calibration Curve 2024 September.txt")
-                st.write("Chromatogram data: 11.15.2024_GB_GRAFT_PS-b-2PLA.txt")
             else:
                 st.stop()
         else:
@@ -128,6 +126,8 @@ def main():
                 cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt", key="cal_uploader")
             else:
                 cal_file = None
+            if cal_file and data_file:
+                st.success("Data loaded successfully!")
 
         # X-axis type selection as toggle
         use_mw = st.toggle(
@@ -154,11 +154,35 @@ def main():
         # Basic Parameters
         with st.expander("Basic Parameters", expanded=False):
             if st.session_state.plot_x_axis == "MW":
-                mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=1000.0, format="%e", key="mw_min")
-                mw_max = st.number_input("MW Upper Bound", 1e3, 1e10, 1e7, step=1000000.0, format="%e", key="mw_max")
+                # MW parameters with logarithmic steps
+                mw_min = st.number_input(
+                    "MW Lower Bound",
+                    1e2, 1e8, 1e3,
+                    step=100.0,  # Smaller step for lower values
+                    format="%e",
+                    key="mw_min"
+                )
+                mw_max = st.number_input(
+                    "MW Upper Bound",
+                    1e3, 1e10, 1e7,
+                    step=10000.0,  # Larger step for higher values
+                    format="%e",
+                    key="mw_max"
+                )
             else:
-                rt_min = st.number_input("RT Lower Bound (min)", 0.0, 100.0, 8.0, step=0.1, key="rt_min")
-                rt_max = st.number_input("RT Upper Bound (min)", 0.0, 100.0, 19.0, step=0.1, key="rt_max")
+                # RT parameters with normal 0.1 steps
+                rt_min = st.number_input(
+                    "RT Lower Bound (min)",
+                    0.0, 100.0, 8.0,
+                    step=0.1,  # Normal 0.1 steps for retention time
+                    key="rt_min"
+                )
+                rt_max = st.number_input(
+                    "RT Upper Bound (min)",
+                    0.0, 100.0, 19.0,
+                    step=0.1,  # Normal 0.1 steps for retention time
+                    key="rt_max"
+                )
 
             y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01, key="y_low")
             y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01, key="y_high")
