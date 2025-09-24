@@ -121,6 +121,7 @@ def _setup_integration_sidebar_ui():
         if x_plot is not None:
             integration_ranges = st.session_state.get('peak_integration_ranges', {})
             x_min, x_max = float(np.min(x_plot)), float(np.max(x_plot))
+            x_axis_type = st.session_state.plot_x_axis
 
             for peak_name in peak_names:
                 if peak_name not in integration_ranges:
@@ -131,25 +132,46 @@ def _setup_integration_sidebar_ui():
                                           key=f"int_enabled_{peak_name}")
 
                     if enabled:
-                        x_axis_type = st.session_state.plot_x_axis
-                        format_str = "%.2f" if x_axis_type == "RT" else "%e"
-                        step = 0.01 if x_axis_type == "RT" else 100.0
+                        current_left = float(integration_ranges[peak_name].get("left", x_min))
+                        current_right = float(integration_ranges[peak_name].get("right", x_max))
 
-                        left, right = st.slider(
-                            "Range",
-                            min_value=x_min,
-                            max_value=x_max,
-                            value=(float(integration_ranges[peak_name].get("left", x_min)),
-                                   float(integration_ranges[peak_name].get("right", x_max))),
-                            key=f"int_range_{peak_name}",
-                            format=format_str,
-                            step=step
-                        )
-                        integration_ranges[peak_name] = {"enabled": True, "left": left, "right": right}
+                        # --- Slider for quick adjustments ---
+                        if x_axis_type == "MW":
+                            # Use logarithmic slider for MW
+                            safe_min = max(x_min, 1.0)
+                            log_min, log_max = np.log10(safe_min), np.log10(x_max)
+
+                            val_left = np.log10(max(safe_min, current_left))
+                            val_right = np.log10(max(safe_min, current_right))
+
+                            if val_right < val_left: val_right = val_left
+
+                            log_range = st.slider("Adjust Range (Log Scale)", log_min, log_max, (val_left, val_right),
+                                                  key=f"int_slider_{peak_name}")
+                            slider_left, slider_right = 10 ** log_range[0], 10 ** log_range[1]
+                        else:
+                            # Use linear slider for RT
+                            slider_left, slider_right = st.slider("Adjust Range", x_min, x_max,
+                                                                  (current_left, current_right),
+                                                                  step=0.01, key=f"int_slider_{peak_name}")
+
+                        # --- Number inputs for precise control ---
+                        left_col, right_col = st.columns(2)
+                        with left_col:
+                            final_left = st.number_input("Lower Bound", min_value=x_min, max_value=x_max,
+                                                         value=slider_left, key=f"int_left_{peak_name}",
+                                                         format="%e" if x_axis_type == "MW" else "%.3f",
+                                                         step=100.0 if x_axis_type == "MW" else 0.01)
+                        with right_col:
+                            final_right = st.number_input("Upper Bound", min_value=x_min, max_value=x_max,
+                                                          value=slider_right, key=f"int_right_{peak_name}",
+                                                          format="%e" if x_axis_type == "MW" else "%.3f",
+                                                          step=100.0 if x_axis_type == "MW" else 0.01)
+
+                        integration_ranges[peak_name] = {"enabled": True, "left": final_left, "right": final_right}
                     else:
                         integration_ranges[peak_name] = {"enabled": False, "left": x_min, "right": x_max}
 
-            # Persist changes back to session state
             st.session_state.peak_integration_ranges = integration_ranges
     else:
         st.sidebar.info("Run deconvolution once to define integration ranges.")
@@ -383,34 +405,20 @@ def main():
     _set_page_meta("Deconvolution", "📊")
 
     # Initialize session state variables
-    if 'plot_x_axis' not in st.session_state:
-        st.session_state.plot_x_axis = "MW"
-    if 'last_fig' not in st.session_state:
-        st.session_state.last_fig = None
-    if 'gaussian_table' not in st.session_state:
-        st.session_state.gaussian_table = None
-    if 'integration_table' not in st.session_state:
-        st.session_state.integration_table = None
-    if 'mw_table' not in st.session_state:
-        st.session_state.mw_table = None
-    if 'graph_placeholder' not in st.session_state:
-        st.session_state.graph_placeholder = None
-    if 'table_placeholder' not in st.session_state:
-        st.session_state.table_placeholder = None
-    if 'toggle_state' not in st.session_state:
-        st.session_state.toggle_state = "MW"
-    if 'last_params' not in st.session_state:
-        st.session_state.last_params = {}
-    if 'integration_enabled' not in st.session_state:
-        st.session_state.integration_enabled = False
-    if 'peak_integration_ranges' not in st.session_state:
-        st.session_state.peak_integration_ranges = {}
-    if 'last_integration_ranges' not in st.session_state:
-        st.session_state.last_integration_ranges = {}
-    if 'x_plot_data' not in st.session_state:
-        st.session_state.x_plot_data = None
-    if 'y_corrected_data' not in st.session_state:
-        st.session_state.y_corrected_data = None
+    if 'plot_x_axis' not in st.session_state: st.session_state.plot_x_axis = "MW"
+    if 'last_fig' not in st.session_state: st.session_state.last_fig = None
+    if 'gaussian_table' not in st.session_state: st.session_state.gaussian_table = None
+    if 'integration_table' not in st.session_state: st.session_state.integration_table = None
+    if 'mw_table' not in st.session_state: st.session_state.mw_table = None
+    if 'graph_placeholder' not in st.session_state: st.session_state.graph_placeholder = None
+    if 'table_placeholder' not in st.session_state: st.session_state.table_placeholder = None
+    if 'toggle_state' not in st.session_state: st.session_state.toggle_state = "MW"
+    if 'last_params' not in st.session_state: st.session_state.last_params = {}
+    if 'integration_enabled' not in st.session_state: st.session_state.integration_enabled = False
+    if 'peak_integration_ranges' not in st.session_state: st.session_state.peak_integration_ranges = {}
+    if 'last_integration_ranges' not in st.session_state: st.session_state.last_integration_ranges = {}
+    if 'x_plot_data' not in st.session_state: st.session_state.x_plot_data = None
+    if 'y_corrected_data' not in st.session_state: st.session_state.y_corrected_data = None
 
     # Main content area - only graph and table
     st.title("Gaussian Deconvolution")
@@ -425,31 +433,18 @@ def main():
 
     # MAIN CONTENT AREA - Only graph and table
     # Create placeholders for graph and table if they don't exist
-    if st.session_state.graph_placeholder is None:
-        st.session_state.graph_placeholder = st.empty()
-    if st.session_state.table_placeholder is None:
-        st.session_state.table_placeholder = st.empty()
+    if st.session_state.graph_placeholder is None: st.session_state.graph_placeholder = st.empty()
+    if st.session_state.table_placeholder is None: st.session_state.table_placeholder = st.empty()
 
     # Check for changes to trigger an update
-    current_params = params_dict
+    current_params = params_dict.copy()
     params_changed = current_params != st.session_state.get('last_params', {})
 
     current_integration_ranges = st.session_state.get('peak_integration_ranges', {})
     integration_ranges_changed = current_integration_ranges != st.session_state.get('last_integration_ranges', {})
 
-    # Handle update button click
-    if 'update_button' in st.session_state and st.session_state.update_button:
-        should_update = True
-        st.session_state.update_button_clicked = True
-    else:
-        st.session_state.update_button_clicked = False
-
-    # Decide if an update is needed
-    auto_update_on = params_dict.get('auto_update', True)
-    if (auto_update_on and (params_changed or integration_ranges_changed)) or st.session_state.update_button_clicked:
-        should_update = True
-    else:
-        should_update = False
+    should_update = st.session_state.get('update_button', False) or \
+                    (params_dict.get('auto_update', True) and (params_changed or integration_ranges_changed))
 
     if should_update:
         # Store current params for comparison next time
@@ -463,122 +458,69 @@ def main():
                 baseline_ranges = parse_ranges(params_dict['baseline_ranges'], is_mw) if params_dict[
                                                                                              'baseline_method'] not in [
                                                                                              "None", "arpls"] else []
-
-                # Load data (assuming tab-separated format with 2 header rows)
                 data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
+                calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2) if is_mw and cal_file else None
 
-                # Load calibration if needed
-                calib = None
-                if is_mw and cal_file:
-                    calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2)
-                elif is_mw:
-                    st.error("Calibration file required for molecular weight plotting")
-                    return
+                manual_peaks = [float(p.strip()) for p in params_dict['peaks_txt'].split(",") if p.strip()]
 
-                # Manual peaks
-                manual_peaks = []
-                if params_dict['peaks_txt'].strip():
-                    for p in params_dict['peaks_txt'].split(","):
-                        try:
-                            manual_peaks.append(float(p.strip()))
-                        except ValueError:
-                            st.warning(f"Invalid peak value: {p}. Skipping.")
+                x_lim = [params_dict['mw_min'], params_dict['mw_max']] if is_mw else [params_dict['rt_min'],
+                                                                                      params_dict['rt_max']]
 
-                # Set limits based on x-axis type
-                if is_mw:
-                    x_lim = [params_dict['mw_min'], params_dict['mw_max']]
-                else:
-                    x_lim = [params_dict['rt_min'], params_dict['rt_max']]
-
-                # Set integration ranges if integration is enabled
                 integration_ranges = st.session_state.peak_integration_ranges if params_dict[
                     'integration_enabled'] else None
 
-                # Run deconvolution
                 fig, gaussian_results_df, integration_results_df, mw_results_df, x_plot, y_corrected, calibration_func = run_deconvolution(
-                    data_array=data,
-                    calib_array=calib,
-                    x_axis_type=st.session_state.plot_x_axis,
-                    x_lim=x_lim,
-                    y_lim=[params_dict['y_low'], params_dict['y_high']],
-                    n_peaks=params_dict['peaks_n'],
-                    plot_sum=params_dict['plot_sum'],
-                    manual_peaks=manual_peaks,
-                    peaks_are_mw=params_dict['peaks_are_mw'],
-                    peak_names=params_dict['custom_names'],
+                    data_array=data, calib_array=calib, x_axis_type=st.session_state.plot_x_axis, x_lim=x_lim,
+                    y_lim=[params_dict['y_low'], params_dict['y_high']], n_peaks=params_dict['peaks_n'],
+                    plot_sum=params_dict['plot_sum'], manual_peaks=manual_peaks,
+                    peaks_are_mw=params_dict['peaks_are_mw'], peak_names=params_dict['custom_names'],
                     peak_colors=params_dict['custom_colors'],
                     peak_width_range=[int(params_dict['w_lo']), int(params_dict['w_hi'])],
-                    baseline_method=params_dict['baseline_method'],
-                    baseline_ranges=baseline_ranges,
+                    baseline_method=params_dict['baseline_method'], baseline_ranges=baseline_ranges,
                     original_data_color=params_dict['original_data_color'],
-                    original_data_label=params_dict['original_data_name'],
-                    font_family=params_dict['font_family'],
-                    font_size=params_dict['font_size'],
-                    fig_size=(params_dict['fig_width'], params_dict['fig_height']),
-                    x_label=params_dict['x_label'],
-                    y_label=params_dict['y_label'],
-                    x_label_style=params_dict['x_label_style'],
-                    y_label_style=params_dict['y_label_style'],
-                    legend_style=params_dict['legend_style'],
-                    integration_ranges=integration_ranges
-                )
+                    original_data_label=params_dict['original_data_name'], font_family=params_dict['font_family'],
+                    font_size=params_dict['font_size'], fig_size=(params_dict['fig_width'], params_dict['fig_height']),
+                    x_label=params_dict['x_label'], y_label=params_dict['y_label'],
+                    x_label_style=params_dict['x_label_style'], y_label_style=params_dict['y_label_style'],
+                    legend_style=params_dict['legend_style'], integration_ranges=integration_ranges)
 
-                # Store the results
-                st.session_state.last_fig = fig
-                st.session_state.gaussian_table = gaussian_results_df
-                st.session_state.integration_table = integration_results_df
-                st.session_state.mw_table = mw_results_df
-                st.session_state.x_plot_data = x_plot
-                st.session_state.y_corrected_data = y_corrected
+                st.session_state.last_fig, st.session_state.gaussian_table = fig, gaussian_results_df
+                st.session_state.integration_table, st.session_state.mw_table = integration_results_df, mw_results_df
+                st.session_state.x_plot_data, st.session_state.y_corrected_data = x_plot, y_corrected
 
             except Exception as e:
                 st.error(f"Error processing files: {str(e)}")
-                st.info("Please ensure your files are in the correct format (tab-separated with 2 header rows)")
             finally:
-                # Clean up temporary files if example data was used
                 if params_dict['data_source'] == "Use Example Data":
-                    try:
-                        if cal_file:
-                            cal_file.close()
-                        if data_file:
-                            data_file.close()
-                        if cal_file:
-                            os.unlink(cal_file.name)
-                        if data_file:
-                            os.unlink(data_file.name)
-                    except Exception:
-                        pass
-        else:
-            if params_dict['data_source'] == "Upload My Own Data":
-                if st.session_state.plot_x_axis == "MW":
-                    st.info("Upload both calibration and data files to begin.")
-                else:
-                    st.info("Upload data file to begin.")
+                    for f in [cal_file, data_file]:
+                        if f:
+                            try:
+                                f.close()
+                                os.unlink(f.name)
+                            except Exception:
+                                pass
+        elif params_dict['data_source'] == "Upload My Own Data":
+            st.info("Upload your data and calibration files to begin.")
 
-    # Display the last graph if it exists
+    # Display results
     if st.session_state.last_fig is not None:
-        with st.session_state.graph_placeholder.container():
-            st.pyplot(st.session_state.last_fig, dpi=600, use_container_width=True)
+        st.session_state.graph_placeholder.pyplot(st.session_state.last_fig, dpi=600, use_container_width=True)
 
-        # Display tables if they exist
         with st.session_state.table_placeholder.container():
             if st.session_state.gaussian_table is not None and not st.session_state.gaussian_table.empty:
                 tab1, tab2, tab3 = st.tabs(["Gaussian Results", "Integration Results", "Molecular Weight Results"])
-
                 with tab1:
                     st.dataframe(st.session_state.gaussian_table, use_container_width=True)
-
                 with tab2:
                     if st.session_state.integration_table is not None and not st.session_state.integration_table.empty:
                         st.dataframe(st.session_state.integration_table, use_container_width=True)
                     else:
-                        st.info("Enable peak integration to see integration results")
-
+                        st.info("Enable peak integration to see integration results.")
                 with tab3:
                     if st.session_state.mw_table is not None and not st.session_state.mw_table.empty:
                         st.dataframe(st.session_state.mw_table, use_container_width=True)
                     else:
-                        st.info("Molecular weight results available only in MW mode with integration enabled")
+                        st.info("Molecular weight results are available in MW mode with integration enabled.")
 
 
 if __name__ == "__main__":
