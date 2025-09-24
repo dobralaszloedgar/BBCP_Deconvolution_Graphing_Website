@@ -84,7 +84,7 @@ def main():
     if 'last_params' not in st.session_state:
         st.session_state.last_params = {}
     if 'integration_enabled' not in st.session_state:
-        st.session_state.integration_enabled = False
+        st.session_state.integration_enabled = True
     if 'peak_integration_ranges' not in st.session_state:
         st.session_state.peak_integration_ranges = {}
     if 'integration_results' not in st.session_state:
