@@ -12,10 +12,12 @@ import streamlit as st
 # Optional baseline correction via pybaselines
 try:
     from pybaselines import Baseline
+
     PYBASELINES_AVAILABLE = True
 except ImportError:
     PYBASELINES_AVAILABLE = False
     st.warning("pybaselines not installed. ARPLS baseline correction will not be available.")
+
 
 def setup_custom_fonts():
     """Add custom fonts from ./fonts if present."""
@@ -33,7 +35,9 @@ def setup_custom_fonts():
         st.warning(f"Could not set up custom fonts: {str(e)}")
         return False
 
+
 setup_custom_fonts()
+
 
 def baseline_correction(x_rt, y, x_plot, method='None', baseline_ranges=[]):
     """
@@ -77,6 +81,7 @@ def baseline_correction(x_rt, y, x_plot, method='None', baseline_ranges=[]):
 
     return y - baseline, baseline
 
+
 def detect_peaks(x_rt, y_corrected, n_peaks, manual_peaks=[], peaks_are_mw=True,
                  calibration_func=None, x_axis_type="MW"):
     """
@@ -108,8 +113,10 @@ def detect_peaks(x_rt, y_corrected, n_peaks, manual_peaks=[], peaks_are_mw=True,
 
     return np.array(x_peaks_rt), np.array(y_peaks), n_peaks_found
 
+
 def gaussian(x, amp, mu, sigma):
     return amp * np.exp(-(x - mu) ** 2 / (2 * sigma ** 2))
+
 
 def fit_gaussians(x_rt, y_corrected, x_peaks_rt, y_peaks, n_peaks, peak_width_range):
     """
@@ -146,6 +153,7 @@ def fit_gaussians(x_rt, y_corrected, x_peaks_rt, y_peaks, n_peaks, peak_width_ra
 
     return best_fit, best_fit_params, best_width
 
+
 def calculate_molecular_weight_averages(x_mw, y_signal, peak_ranges):
     """
     Compute Mn, Mw, Đ within each enabled range using positive signal only.
@@ -181,6 +189,7 @@ def calculate_molecular_weight_averages(x_mw, y_signal, peak_ranges):
             'Đ': f"{dispersity:.2f}",
         })
     return pd.DataFrame(results)
+
 
 def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, peak_colors,
                 original_data_label, original_data_color, plot_sum, x_axis_type, x_lim, y_lim,
@@ -280,32 +289,33 @@ def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, pea
     fig.tight_layout()
     return fig
 
+
 def run_deconvolution(
-    data_array,
-    calib_array=None,
-    x_axis_type="MW",
-    x_lim=[1e3, 1e7],
-    y_lim=[-0.02, 1.0],
-    n_peaks=4,
-    plot_sum=False,
-    manual_peaks=[],
-    peaks_are_mw=True,
-    peak_names=["Peak 1", "Peak 2", "Peak 3", "Peak 4"],
-    peak_colors=['#FFbf00', '#06d6a0', '#118ab2', '#073b4c'],
-    peak_width_range=[100, 400],
-    baseline_method='None',
-    baseline_ranges=[],
-    original_data_color='#ef476f',
-    original_data_label='Original Data',
-    font_family='Times New Roman',
-    font_size=12,
-    fig_size=(8, 5),
-    x_label="Molecular weight (g/mol)",
-    y_label="Normalized Response",
-    x_label_style="normal",
-    y_label_style="normal",
-    legend_style="normal",
-    integration_ranges=None
+        data_array,
+        calib_array=None,
+        x_axis_type="MW",
+        x_lim=[1e3, 1e7],
+        y_lim=[-0.02, 1.0],
+        n_peaks=4,
+        plot_sum=False,
+        manual_peaks=[],
+        peaks_are_mw=True,
+        peak_names=["Peak 1", "Peak 2", "Peak 3", "Peak 4"],
+        peak_colors=['#FFbf00', '#06d6a0', '#118ab2', '#073b4c'],
+        peak_width_range=[100, 400],
+        baseline_method='None',
+        baseline_ranges=[],
+        original_data_color='#ef476f',
+        original_data_label='Original Data',
+        font_family='Times New Roman',
+        font_size=12,
+        fig_size=(8, 5),
+        x_label="Molecular weight (g/mol)",
+        y_label="Normalized Response",
+        x_label_style="normal",
+        y_label_style="normal",
+        legend_style="normal",
+        integration_ranges=None
 ):
     """
     Orchestrate: prepare data, baseline-correct, fit Gaussians, compute areas, and return figure + tables.
@@ -419,25 +429,36 @@ def run_deconvolution(
                 rows.append({'Peak': name, value_column: f"{value:.2f}", 'Gaussian Area %': f"{pct:.1f}"})
         gaussian_results_df = pd.DataFrame(rows)
 
-    # Integration areas over visible x-range only; y clamped to >= 0; x sorted ascending
+    # Integration areas over visible RT range only; y clamped to >= 0; x_rt sorted ascending
     if integration_ranges:
         integration_areas = []
         for name in peak_names:
             if name in integration_ranges and integration_ranges[name].get("enabled", False):
                 left = float(integration_ranges[name]["left"])
                 right = float(integration_ranges[name]["right"])
-                # Intersect with visible x-limits
-                left_vis = max(left, x_lim[0])
-                right_vis = min(right, x_lim[1])
+
+                # Convert integration range boundaries to RT if in MW mode
+                if x_axis_type == "MW" and calibration_func is not None:
+                    # Convert MW boundaries to RT
+                    left_rt = calibration_func['mw_to_rt'](right)  # Note: higher MW = lower RT
+                    right_rt = calibration_func['mw_to_rt'](left)  # Note: lower MW = higher RT
+                else:
+                    left_rt = left
+                    right_rt = right
+
+                # Intersect with visible RT limits
+                left_vis = max(left_rt, rt_lim[0])
+                right_vis = min(right_rt, rt_lim[1])
                 if right_vis <= left_vis:
                     integration_areas.append(0.0)
                     continue
-                mask = (x_plot >= left_vis) & (x_plot <= right_vis)
+
+                mask = (x_rt >= left_vis) & (x_rt <= right_vis)
                 if np.sum(mask) > 0:
-                    x_seg = x_plot[mask]
+                    x_seg = x_rt[mask]
                     y_seg = np.maximum(y_corrected[mask], 0.0)
                     order = np.argsort(x_seg)
-                    area = np.trapz(y_seg[order], x_seg[order])
+                    area = np.trapezoid(y_seg[order], x_seg[order])
                     integration_areas.append(max(area, 0.0))
                 else:
                     integration_areas.append(0.0)
@@ -460,6 +481,7 @@ def run_deconvolution(
             })
         integration_results_df = pd.DataFrame(integration_rows)
 
+        # Molecular weight averages still use MW domain
         if x_axis_type == "MW" and calibration_func:
             mw_results_df = calculate_molecular_weight_averages(x_plot, y_corrected, integration_ranges)
 
