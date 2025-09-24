@@ -193,24 +193,6 @@ def _setup_integration_sidebar_ui():
 
             st.session_state.peak_integration_ranges = integration_ranges
 
-            # Show total integration area percentage
-            if st.session_state.get('y_corrected_data') is not None:
-                total_area = 0
-                enabled_areas = []
-
-                for peak_name in peak_names:
-                    if integration_ranges[peak_name]["enabled"]:
-                        left = integration_ranges[peak_name]["left"]
-                        right = integration_ranges[peak_name]["right"]
-                        y_positive = np.maximum(st.session_state.y_corrected_data, 0)
-                        mask = (x_plot >= left) & (x_plot <= right)
-                        if np.sum(mask) > 0:
-                            area = np.trapz(y_positive[mask], x_plot[mask])
-                            enabled_areas.append(area)
-
-                if enabled_areas:
-                    total_area = sum(enabled_areas)
-                    st.sidebar.metric("Total Integration Area", f"{total_area:.4f}")
     else:
         st.sidebar.info("Run deconvolution once to define integration ranges.")
 
