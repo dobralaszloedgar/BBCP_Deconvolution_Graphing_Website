@@ -1,527 +1,487 @@
-from Deconvolution import run_deconvolution
-import streamlit as st
+import matplotlib.pyplot as plt
 import numpy as np
-import requests
-import tempfile
+from scipy.optimize import curve_fit
+from scipy.signal import find_peaks
+from scipy.integrate import trapezoid
+from scipy.interpolate import interp1d
+import pandas as pd
+import streamlit as st
+import matplotlib.font_manager as fm
 import os
 
+# Add pybaselines import
+try:
+    from pybaselines import Baseline
 
-def _clear_query_params_and_rerun():
-    """Clear query parameters and rerun the app (for navigation)"""
+    PYBASELINES_AVAILABLE = True
+except ImportError:
+    PYBASELINES_AVAILABLE = False
+    st.warning("pybaselines not installed. ARPLS baseline correction will not be available.")
+
+
+def setup_custom_fonts():
+    """Add custom fonts from the fonts directory to matplotlib's font manager"""
     try:
-        # New API
-        st.query_params.clear()
-    except Exception:
-        # Old API: set to empty
-        try:
-            st.experimental_set_query_params()
-        except Exception:
-            pass
-    st.rerun()
+        # Get the directory where this script is located
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        fonts_dir = os.path.join(script_dir, 'fonts')
 
+        # Check if fonts directory exists
+        if os.path.exists(fonts_dir):
+            # Add all fonts in the fonts directory
+            font_files = fm.findSystemFonts(fontpaths=[fonts_dir])
+            for font_file in font_files:
+                fm.fontManager.addfont(font_file)
 
-def _set_page_meta(title: str, icon: str):
-    """
-    Set page title and icon with fallback for when page_config is already set
-    """
-    try:
-        st.set_page_config(
-            page_title=title,
-            page_icon=icon,
-            initial_sidebar_state="expanded",
-        )
-    except Exception:
-        # Fallback: update title + favicon via JavaScript
-        emoji = icon
-        js = f"""
-        <script>
-        (function() {{
-            const setTitle = (t) => {{ document.title = t; }};
-            const setFavicon = (emoji) => {{
-                const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>
-                               <text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='52'>{{emoji}}</text>
-                             </svg>`;
-                const url = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
-                let link = document.querySelector("link[rel='icon']") || document.createElement('link');
-                link.setAttribute('rel', 'icon');
-                link.setAttribute('href', url);
-                document.head.appendChild(link);
-            }};
-            setTitle("{title}");
-            setFavicon("{emoji}");
-        }})();
-        </script>
-        """
-        st.markdown(js, unsafe_allow_html=True)
-
-
-def download_default_file(url, filename):
-    """Download default files from GitHub for example data"""
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
-        temp_file.write(response.content)
-        temp_file.close()
-        return temp_file.name
+            # Set default font
+            plt.rcParams['font.family'] = 'Arial'
     except Exception as e:
-        st.error(f"Error downloading default file: {str(e)}")
-        return None
+        # st.warning(f"Could not set up custom fonts: {e}")
+        pass  # Silently fail if there's an issue with font setup
 
 
-def parse_ranges(inputs, is_mw=True):
+def gaussian(x, amplitude, mean, stddev):
+    """1D Gaussian function."""
+    # Ensure stddev is not zero to avoid division by zero
+    if stddev == 0:
+        return np.zeros_like(x)
+    return amplitude * np.exp(-((x - mean) ** 2) / (2 * stddev ** 2))
+
+
+def multi_gaussian(x, *params):
+    """Sum of multiple Gaussian functions."""
+    y = np.zeros_like(x)
+    for i in range(0, len(params), 3):
+        amplitude, mean, stddev = params[i:i + 3]
+        # Add constraint to keep stddev positive
+        if stddev > 0:
+            y += gaussian(x, amplitude, mean, np.abs(stddev))
+    return y
+
+
+def get_rt_from_mw(mw, a, b):
+    """Power law calibration: RT = a * MW^b"""
+    return a * (mw ** b)
+
+
+def get_mw_from_rt(rt, a, b):
+    """Inverse of power law calibration: MW = (RT / a)^(1/b)"""
+    return (rt / a) ** (1 / b)
+
+
+def fit_calibration(rt_values, mw_values):
+    """Fit calibration curve and return the function."""
+    if len(rt_values) < 2 or len(mw_values) < 2:
+        return None, "At least two calibration points are required."
+
+    try:
+        # Fit a power law: RT = a * MW^b  =>  log(RT) = log(a) + b*log(MW)
+        log_mw = np.log(mw_values)
+        log_rt = np.log(rt_values)
+
+        # Perform linear fit
+        b, log_a = np.polyfit(log_mw, log_rt, 1)
+        a = np.exp(log_a)
+
+        # Calculate R^2 value
+        predicted_log_rt = b * log_mw + log_a
+        ss_res = np.sum((log_rt - predicted_log_rt) ** 2)
+        ss_tot = np.sum((log_rt - np.mean(log_rt)) ** 2)
+        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 1
+
+        # Return calibration function and its inverse
+        return {
+            "a": a,
+            "b": b,
+            "r_squared": r_squared,
+            "rt_to_mw": lambda rt: get_mw_from_rt(rt, a, b),
+            "mw_to_rt": lambda mw: get_rt_from_mw(mw, a, b),
+        }, None
+    except Exception as e:
+        return None, f"Calibration failed: {e}"
+
+
+def perform_deconvolution(x_data, y_data, peaks_rt, initial_stddev, initial_amplitude, bounds):
+    """Performs Gaussian deconvolution."""
+    num_peaks = len(peaks_rt)
+
+    # Initial guesses: [amp1, mean1, std1, amp2, mean2, std2, ...]
+    initial_guesses = []
+    for i in range(num_peaks):
+        initial_guesses.extend([initial_amplitude[i], peaks_rt[i], initial_stddev])
+
+    # Fit the multi-Gaussian model
+    try:
+        popt, pcov = curve_fit(
+            multi_gaussian,
+            x_data,
+            y_data,
+            p0=initial_guesses,
+            bounds=bounds,
+            maxfev=5000  # Increased max iterations
+        )
+        return popt, None
+    except RuntimeError as e:
+        return None, f"Deconvolution fit failed. Try adjusting initial guesses or bounds. Error: {e}"
+
+
+def calculate_mw_from_integration_regions(x_mw, y_signal, peak_ranges, baseline_y):
     """
-    Parse range inputs from text to numerical ranges
-
+    Calculates number-average (Mn), weight-average (Mw), and dispersity (Đ)
+    for specified molecular weight integration regions.
     Args:
-        inputs: List of range strings (e.g., ["1e3-1.2e3"])
-        is_mw: Whether the ranges are for molecular weight
-
+        x_mw: Molecular weight values
+        y_signal: Signal intensity values (must be non-negative)
+        peak_ranges: Dictionary containing integration ranges for each peak
+        baseline_y: The calculated baseline values corresponding to y_signal
     Returns:
-        ranges: List of [left, right] numerical ranges
+        mw_results: DataFrame with Mn, Mw, and Đ for each peak
     """
-    rngs = []
-    for inp in inputs:
-        if not inp.strip():
+    results = []
+    total_area = 0
+    peak_areas = {}
+
+    # First pass: calculate area of each peak
+    for peak_name, (start_mw, end_mw) in peak_ranges.items():
+        # Ensure start is less than end
+        if start_mw >= end_mw:
             continue
-        if "-" in inp:
-            try:
-                lo, hi = map(float, inp.split("-"))
-                rngs.append([lo, hi])
-            except ValueError:
-                st.warning(f"Invalid range format: {inp}. Skipping.")
-        else:
-            try:
-                val = float(inp)
-                # For single values, create a small range around the value
-                if is_mw:
-                    rngs.append([val * 0.99, val * 1.01])
-                else:
-                    rngs.append([val - 0.01, val + 0.01])
-            except ValueError:
-                st.warning(f"Invalid value format: {inp}. Skipping.")
-    return rngs
+
+        mask = (x_mw >= start_mw) & (x_mw <= end_mw)
+        if not np.any(mask):
+            peak_areas[peak_name] = 0
+            continue
+
+        x_peak = x_mw[mask]
+
+        # Integrate signal above baseline, ensuring it's non-negative
+        y_corrected = np.maximum(0, y_signal[mask] - baseline_y[mask])
+
+        # Use trapezoidal rule for integration
+        area = trapezoid(y_corrected, x_peak)
+        peak_areas[peak_name] = area
+        total_area += area
+
+    # Second pass: calculate Mn, Mw, and PDI for each peak
+    for peak_name, (start_mw, end_mw) in peak_ranges.items():
+        if start_mw >= end_mw:
+            continue
+
+        mask = (x_mw >= start_mw) & (x_mw <= end_mw)
+        if not np.any(mask):
+            continue
+
+        x_peak = x_mw[mask]
+
+        # Signal is proportional to number of moles * MW (Ni * Mi)
+        # For GPC, y_signal is proportional to wi, which is Ni * Mi
+        ni = (y_signal[mask] / x_peak)
+
+        # Baseline correction
+        ni_baseline = (baseline_y[mask] / x_peak)
+        ni_corrected = np.maximum(0, ni - ni_baseline)
+
+        # Calculate sums for Mn and Mw
+        sum_ni = trapezoid(ni_corrected, x_peak)
+        sum_ni_mi = trapezoid(ni_corrected * x_peak, x_peak)
+        sum_ni_mi2 = trapezoid(ni_corrected * x_peak ** 2, x_peak)
+
+        if sum_ni > 0:
+            mn = sum_ni_mi / sum_ni
+            mw = sum_ni_mi2 / sum_ni_mi
+            pdi = mw / mn if mn > 0 else 0
+
+            area_percentage = (peak_areas[peak_name] / total_area) * 100 if total_area > 0 else 0
+
+            results.append({
+                "Peak": peak_name,
+                "Mn": mn,
+                "Mw": mw,
+                "Đ (PDI)": pdi,
+                "Area (%)": area_percentage
+            })
+
+    return pd.DataFrame(results) if results else pd.DataFrame()
 
 
-def _setup_integration_sidebar_ui():
-    """
-    Renders the integration range controls in the sidebar if integration is
-    enabled and peak data is available from a previous run.
-    This function modifies st.session_state.peak_integration_ranges directly.
-    """
-    if not st.session_state.get('integration_enabled', False):
+def run_deconvolution():
+    st.title("GPC Deconvolution App")
+    setup_custom_fonts()
+
+    # --- Sidebar ---
+    with st.sidebar:
+        st.header("1. Upload Data")
+        uploaded_file = st.file_uploader("Upload a CSV or TXT file", type=["csv", "txt"])
+
+        st.header("2. Axis Configuration")
+        x_axis_type = st.radio("X-axis data represents:", ("Retention Time (min)", "Molecular Weight (Da)"),
+                               key="x_axis_type_radio")
+        x_col = st.text_input("Column name/index for X-axis", "0")
+        y_col = st.text_input("Column name/index for Y-axis", "1")
+
+        header_row = st.number_input("Header row (set to None if no header)", value=0, format="%d")
+        if header_row < 0: header_row = None
+
+        st.header("3. Baseline Correction")
+        use_baseline_correction = st.checkbox("Enable Baseline Correction", True)
+        baseline_method = "arpls"
+        if use_baseline_correction and PYBASELINES_AVAILABLE:
+            lam_param = st.slider("ARPLS Lambda (λ)", 1e2, 1e9, 1e6, format="%e")
+            p_param = st.slider("ARPLS p", 0.001, 1.0, 0.01)
+
+    if not uploaded_file:
+        st.info("Please upload a data file to begin.")
         return
 
-    # Check if we have peak names from a previous run to build the UI
-    if 'gaussian_table' in st.session_state and st.session_state.gaussian_table is not None and not st.session_state.gaussian_table.empty:
-        st.sidebar.subheader("Integration Ranges")
-        peak_names = st.session_state.gaussian_table['Peak'].tolist()
-        x_plot = st.session_state.get('x_plot_data')
+    # --- Data Loading ---
+    try:
+        df = pd.read_csv(uploaded_file, header=header_row, delim_whitespace=True)
+        x_input = pd.to_numeric(df.iloc[:, int(x_col)]).values
+        y_input = pd.to_numeric(df.iloc[:, int(y_col)]).values
+    except Exception as e:
+        st.error(f"Error reading file: {e}")
+        return
 
-        if x_plot is not None:
-            integration_ranges = st.session_state.get('peak_integration_ranges', {})
-            x_min, x_max = float(np.min(x_plot)), float(np.max(x_plot))
-            x_axis_type = st.session_state.plot_x_axis
+    # --- Calibration Section ---
+    calibration_func = None
+    is_calibrated = False
 
-            for peak_name in peak_names:
-                if peak_name not in integration_ranges:
-                    integration_ranges[peak_name] = {"enabled": True, "left": x_min, "right": x_max}
+    # Calibration is needed if input is RT and we want to see MW
+    if x_axis_type == "Retention Time (min)":
+        with st.expander("GPC Calibration (RT -> MW)", expanded=True):
+            st.write("Enter pairs of Retention Time (min) and corresponding Molecular Weight (Da) standards.")
 
-                with st.sidebar.expander(f"Range for {peak_name}", expanded=False):
-                    enabled = st.checkbox("Integrate", value=integration_ranges[peak_name].get("enabled", True),
-                                          key=f"int_enabled_{peak_name}")
+            if 'cal_points' not in st.session_state:
+                st.session_state.cal_points = [{"rt": 10, "mw": 100000}, {"rt": 20, "mw": 1000}]
 
-                    if enabled:
-                        current_left = float(integration_ranges[peak_name].get("left", x_min))
-                        current_right = float(integration_ranges[peak_name].get("right", x_max))
+            def draw_cal_points():
+                for i, point in enumerate(st.session_state.cal_points):
+                    cols = st.columns([3, 3, 1])
+                    st.session_state.cal_points[i]['rt'] = cols[0].number_input(f"RT {i + 1} (min)", value=point['rt'],
+                                                                                key=f"rt_{i}")
+                    st.session_state.cal_points[i]['mw'] = cols[1].number_input(f"MW {i + 1} (Da)", value=point['mw'],
+                                                                                format="%d", key=f"mw_{i}")
+                    if cols[2].button("❌", key=f"del_{i}"):
+                        st.session_state.cal_points.pop(i)
+                        st.rerun()
 
-                        # --- Slider for quick adjustments ---
-                        if x_axis_type == "MW":
-                            # Use logarithmic slider for MW
-                            safe_min = max(x_min, 1.0)
-                            log_min, log_max = np.log10(safe_min), np.log10(x_max)
+            draw_cal_points()
 
-                            val_left = np.log10(max(safe_min, current_left))
-                            val_right = np.log10(max(safe_min, current_right))
+            if st.button("Add Calibration Point"):
+                st.session_state.cal_points.append({"rt": 0, "mw": 0})
+                st.rerun()
 
-                            if val_right < val_left: val_right = val_left
+            rt_vals = [p['rt'] for p in st.session_state.cal_points if p['rt'] > 0 and p['mw'] > 0]
+            mw_vals = [p['mw'] for p in st.session_state.cal_points if p['rt'] > 0 and p['mw'] > 0]
 
-                            log_range = st.slider("Adjust Range (Log Scale)", log_min, log_max, (val_left, val_right),
-                                                  key=f"int_slider_{peak_name}")
-                            slider_left, slider_right = 10 ** log_range[0], 10 ** log_range[1]
-                        else:
-                            # Use linear slider for RT
-                            slider_left, slider_right = st.slider("Adjust Range", x_min, x_max,
-                                                                  (current_left, current_right),
-                                                                  step=0.01, key=f"int_slider_{peak_name}")
-
-                        # --- Number inputs for precise control ---
-                        left_col, right_col = st.columns(2)
-                        with left_col:
-                            final_left = st.number_input("Lower Bound", min_value=x_min, max_value=x_max,
-                                                         value=slider_left, key=f"int_left_{peak_name}",
-                                                         format="%e" if x_axis_type == "MW" else "%.3f",
-                                                         step=100.0 if x_axis_type == "MW" else 0.01)
-                        with right_col:
-                            final_right = st.number_input("Upper Bound", min_value=x_min, max_value=x_max,
-                                                          value=slider_right, key=f"int_right_{peak_name}",
-                                                          format="%e" if x_axis_type == "MW" else "%.3f",
-                                                          step=100.0 if x_axis_type == "MW" else 0.01)
-
-                        integration_ranges[peak_name] = {"enabled": True, "left": final_left, "right": final_right}
-                    else:
-                        integration_ranges[peak_name] = {"enabled": False, "left": x_min, "right": x_max}
-
-            st.session_state.peak_integration_ranges = integration_ranges
-    else:
-        st.sidebar.info("Run deconvolution once to define integration ranges.")
-
-
-def setup_sidebar_ui():
-    """
-    Set up all the sidebar UI components
-
-    Returns:
-        params_dict: Dictionary containing all user parameters
-        data_file: Uploaded or default data file
-        cal_file: Uploaded or default calibration file
-    """
-    st.header("Settings")
-
-    # Data source selection
-    data_source = st.radio("Select Data Source:", ["Use Example Data", "Upload My Own Data"], key="data_source")
-
-    cal_file = None
-    data_file = None
-
-    # File handling
-    if data_source == "Use Example Data":
-        st.info("Using example data to demonstrate the deconvolution process.")
-        with st.spinner("Loading example data..."):
-            DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
-            DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
-
-            cal_path = download_default_file(DEFAULT_CAL_URL, "default_cal.txt")
-            data_path = download_default_file(DEFAULT_DATA_URL, "default_data.txt")
-
-        if cal_path and data_path:
-            cal_file = open(cal_path, 'r')
-            data_file = open(data_path, 'r')
-        else:
-            st.stop()
-    else:
-        data_file = st.file_uploader("Chromatogram Data (.txt)", type="txt", key="data_uploader")
-        if st.session_state.plot_x_axis == "MW":
-            cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt", key="cal_uploader")
-        else:
-            cal_file = None
-
-        if cal_file and data_file:
-            st.success("Data loaded successfully!")
-
-    # X-axis type selection
-    use_mw = st.toggle(
-        "Retention Time ↔ Molecular Weight",
-        value=(st.session_state.plot_x_axis == "MW"),
-        help="Toggle between Molecular Weight and Retention Time for X-axis",
-        key="x_axis_toggle"
-    )
-
-    # Update session state based on toggle
-    new_toggle_state = "MW" if use_mw else "RT"
-    if new_toggle_state != st.session_state.toggle_state:
-        st.session_state.toggle_state = new_toggle_state
-        st.session_state.plot_x_axis = new_toggle_state
-
-    if st.session_state.plot_x_axis == "MW" and cal_file is None and data_source == "Upload My Own Data":
-        st.warning("Calibration file required for molecular weight plotting")
-
-    # Basic Parameters
-    with st.expander("Basic Parameters", expanded=False):
-        if st.session_state.plot_x_axis == "MW":
-            mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=100.0, format="%e", key="mw_min")
-            mw_max = st.number_input("MW Upper Bound", 1e3, 1e10, 1e7, step=10000.0, format="%e", key="mw_max")
-        else:
-            rt_min = st.number_input("RT Lower Bound (min)", 0.0, 100.0, 8.0, step=0.1, key="rt_min")
-            rt_max = st.number_input("RT Upper Bound (min)", 0.0, 100.0, 19.0, step=0.1, key="rt_max")
-
-        y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01, key="y_low")
-        y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01, key="y_high")
-
-        peaks_n = st.slider("Number Of Peaks", 1, 10, 4, key="peaks_n")
-        w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10, key="w_lo")
-        w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10, key="w_hi")
-        baseline_method = st.selectbox(
-            "Baseline Correction Method",
-            ["None", "arpls", "flat", "linear", "quadratic"],
-            index=0,
-            key="baseline_method"
-        )
-
-        # Baseline ranges UI
-        baseline_ranges_inputs = []
-        if baseline_method not in ["None", "arpls"]:
-            unit = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
-            required_ranges = {"flat": 1, "linear": 2, "quadratic": 3}.get(baseline_method, 0)
-            st.write(f"Enter {required_ranges} baseline range(s) for {baseline_method} correction ({unit}):")
-            for i in range(required_ranges):
-                if st.session_state.plot_x_axis == "MW":
-                    default_val = "1e3-1.2e3" if i == 0 else f"{i + 1}e4-{i + 2}e4" if i == 1 else f"{i + 1}e6-{i + 2}e6"
+            if len(rt_vals) >= 2:
+                calibration_func, error = fit_calibration(rt_vals, mw_vals)
+                if error:
+                    st.error(error)
                 else:
-                    default_val = f"10.0-11.0" if i == 0 else f"{12.0 + i}-{13.0 + i}" if i == 1 else f"{15.0 + i}-{16.0 + i}"
-                range_input = st.text_input(
-                    f"Baseline Range {i + 1} ({unit})",
-                    value=default_val, key=f"bl_range_{i}"
-                )
-                baseline_ranges_inputs.append(range_input)
+                    st.success(f"Calibration successful! R² = {calibration_func['r_squared']:.4f}")
+                    is_calibrated = True
+                    x_mw = calibration_func['rt_to_mw'](x_input)
+                    x_axis_label = "Molecular Weight (Da)"
+            else:
+                st.warning("Please provide at least two valid calibration points.")
+                x_mw = None
+                x_axis_label = "Retention Time (min)"
+    else:  # Input is already MW
+        is_calibrated = True
+        x_mw = x_input
+        x_axis_label = "Molecular Weight (Da)"
 
-        # Manual peaks
-        unit_label = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
-        peaks_txt = st.text_input(f"Manual Peaks (comma list, blank=auto) in {unit_label}", "", key="peaks_txt")
-        peaks_are_mw = st.checkbox(f"Manual Peaks Given As {unit_label}", True, key="peaks_are_mw")
+    # Use retention time if not calibrated, otherwise use MW
+    x_plot = x_mw if is_calibrated and x_mw is not None else x_input
+    y_plot = y_input
 
-    # Peak Colors And Names
-    with st.expander("Peak Colors And Names", expanded=False):
-        st.write("Peak Names And Colors:")
-        default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5",
-                         "Peak 6", "Peak 7", "Peak 8", "Peak 9", "Peak 10"]
-        default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c', '#a83232',
-                          '#a832a8', '#32a852', '#3264a8', '#a86432', '#6432a8']
+    # --- Baseline Correction ---
+    baseline_y = np.zeros_like(y_plot)
+    y_corrected = y_plot
+    if use_baseline_correction and PYBASELINES_AVAILABLE:
+        baseline_fitter = Baseline(x_data=x_plot)
+        try:
+            baseline_y, _ = baseline_fitter.arpls(y_plot, lam=lam_param, p=p_param)
+            y_corrected = y_plot - baseline_y
+        except Exception as e:
+            st.error(f"Baseline correction failed: {e}")
 
-        custom_names = []
-        custom_colors = []
+    # --- Deconvolution & Integration Settings ---
+    st.header("4. Deconvolution and Integration")
 
-        original_data_name = st.text_input("Original Data Name", value="Original Data", key="original_data_name")
-        original_data_color = st.color_picker("Original Data Color", value="#ef476f", key="original_data_color")
+    # Peak finding vs Manual
+    peak_source = st.radio("Peak Definition Method", ["Automated Peak Finding", "Manual Integration Ranges"], index=1)
 
-        for i in range(peaks_n):
-            name = st.text_input(
-                f"Peak {i + 1} Name",
-                value=default_names[i] if i < len(default_names) else f"Peak {i + 1}",
-                key=f"name_{i}"
-            )
-            custom_names.append(name)
+    popt = None  # Deconvolution parameters
 
-            color = st.color_picker(
-                f"Peak {i + 1} Color",
-                value=default_colors[i] if i < len(default_colors) else '#000000',
-                key=f"color_{i}"
-            )
-            custom_colors.append(color)
+    if peak_source == "Automated Peak Finding":
+        st.subheader("Automated Peak Finding Settings")
+        height_threshold = st.slider("Peak Height Threshold", 0.0, 1.0, 0.1, 0.01)
+        peak_prominence = st.slider("Peak Prominence", 0.0, 1.0, 0.1, 0.01)
+        max_peaks = st.number_input("Maximum Number of Peaks", 1, 20, 5)
 
-        plot_sum = st.checkbox("Plot Sum Of Gaussians", False, key="plot_sum")
+        # Find peaks on the baseline-corrected data
+        peaks_indices, _ = find_peaks(y_corrected, height=height_threshold * np.max(y_corrected),
+                                      prominence=peak_prominence)
 
-    # Peak Integration
-    with st.expander("Peak Integration", expanded=False):
-        integration_enabled = st.checkbox(
-            "Enable Peak Integration",
-            value=st.session_state.get('integration_enabled', False),
-            key="integration_enabled_checkbox"
-        )
-        st.session_state.integration_enabled = integration_enabled
+        # Limit number of peaks
+        if len(peaks_indices) > max_peaks:
+            # Sort by prominence or height and take the top ones
+            peak_heights = y_corrected[peaks_indices]
+            sorted_indices = np.argsort(peak_heights)[::-1]
+            peaks_indices = peaks_indices[sorted_indices[:max_peaks]]
 
-    # Call the new function to render integration controls if enabled
-    _setup_integration_sidebar_ui()
+        peaks_rt_found = x_plot[peaks_indices]
+        st.write(f"Found {len(peaks_rt_found)} peaks.")
 
-    # Appearance Settings
-    with st.expander("Appearance Settings", expanded=False):
-        common_fonts = sorted([
-            "Arial", "Times New Roman", "Helvetica", "Verdana", "Georgia",
-            "Courier New", "Tahoma", "Trebuchet MS", "Palatino", "Garamond",
-            "Comic Sans MS", "Impact", "Lucida Console", "Lucida Sans Unicode",
-            "Calibri", "Cambria", "Candara", "Segoe UI", "Optima", "Futura"
-        ])
-        default_font_index = common_fonts.index("Times New Roman") if "Times New Roman" in common_fonts else 0
-        font_family = st.selectbox("Font Family", common_fonts, index=default_font_index, key="font_family")
-        font_size = st.number_input("Font Size", 8, 20, 12, step=1, key="font_size")
+        st.subheader("Deconvolution Settings")
+        initial_stddev_guess = st.slider("Initial StdDev Guess", 0.01, max(x_plot) / 4 if max(x_plot) > 0 else 1.0, 0.5)
 
-        fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5, key="fig_width")
-        fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5, key="fig_height")
+        # Bounds for parameters [amp, mean, stddev]
+        lower_bounds = []
+        upper_bounds = []
+        for peak_rt in peaks_rt_found:
+            lower_bounds.extend([0, peak_rt - initial_stddev_guess * 2, 0.01])  # amp, mean, std
+            upper_bounds.extend([np.inf, peak_rt + initial_stddev_guess * 2, initial_stddev_guess * 5])
 
-        if st.session_state.plot_x_axis == "MW":
-            x_label = st.text_input("X-Axis Label", "Molecular weight (g/mol)", key="x_label")
+        # Perform deconvolution
+        popt, fit_error = perform_deconvolution(x_plot, y_corrected, peaks_rt_found, initial_stddev_guess,
+                                                y_corrected[peaks_indices], (lower_bounds, upper_bounds))
+        if fit_error:
+            st.error(fit_error)
+
+    # --- Manual Integration Ranges ---
+    integration_ranges = {}
+    if peak_source == "Manual Integration Ranges" and is_calibrated:
+        st.subheader("Define Integration Ranges (MW)")
+        num_ranges = st.number_input("Number of integration ranges", 1, 10, 1)
+
+        min_mw_limit = float(np.min(x_mw))
+        max_mw_limit = float(np.max(x_mw))
+
+        # Use columns for a cleaner layout
+        for i in range(num_ranges):
+            st.markdown(f"---")
+            st.markdown(f"**Range {i + 1}**")
+            cols = st.columns([1, 1, 2])
+
+            # Use log scale for sliders, but linear for number input
+            log_min = np.log10(min_mw_limit)
+            log_max = np.log10(max_mw_limit)
+
+            # Default values for the slider
+            default_start = np.log10(np.quantile(x_mw, 0.2 + i * 0.2)) if num_ranges > 1 else log_min
+            default_end = np.log10(np.quantile(x_mw, 0.4 + i * 0.2)) if num_ranges > 1 else log_max
+
+            # Session state to keep slider and number_input in sync
+            state_key = f"range_{i}"
+            if state_key not in st.session_state:
+                st.session_state[state_key] = (10 ** default_start, 10 ** default_end)
+
+            # Number inputs
+            start_val = cols[0].number_input(f"Start MW {i + 1}", min_value=min_mw_limit, max_value=max_mw_limit,
+                                             value=st.session_state[state_key][0], key=f"num_start_{i}")
+            end_val = cols[1].number_input(f"End MW {i + 1}", min_value=min_mw_limit, max_value=max_mw_limit,
+                                           value=st.session_state[state_key][1], key=f"num_end_{i}")
+
+            # Logarithmic slider
+            log_range = cols[2].slider(f"Adjust Range {i + 1}", log_min, log_max,
+                                       (np.log10(start_val), np.log10(end_val)), key=f"slider_{i}")
+
+            # Update state based on which widget was used last
+            # A bit of a hack to sync widgets, Streamlit doesn't have a native callback for this
+            if (10 ** log_range[0], 10 ** log_range[1]) != (start_val, end_val):
+                # if slider was moved, update number inputs in next rerun
+                st.session_state[state_key] = (10 ** log_range[0], 10 ** log_range[1])
+                st.rerun()
+            else:
+                # if number input was changed, update state
+                st.session_state[state_key] = (start_val, end_val)
+
+            integration_ranges[f"Peak {i + 1}"] = (start_val, end_val)
+
+    # --- Plotting ---
+    st.header("5. Results")
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot original data
+    ax.plot(x_plot, y_plot, label="Original Data", color='black')
+
+    # Plot baseline
+    if use_baseline_correction:
+        ax.plot(x_plot, baseline_y, label="Baseline", color="gray", linestyle="--")
+
+    # Plot deconvoluted peaks
+    if popt is not None:
+        fitted_curve = multi_gaussian(x_plot, *popt) + (baseline_y if use_baseline_correction else 0)
+        ax.plot(x_plot, fitted_curve, label="Total Fit", color="red", linestyle="-", linewidth=2)
+        for i in range(0, len(popt), 3):
+            peak_curve = gaussian(x_plot, *popt[i:i + 3]) + (baseline_y if use_baseline_correction else 0)
+            ax.plot(x_plot, peak_curve, linestyle="--", label=f"Peak {i // 3 + 1}")
+
+    # Plot manual integration ranges
+    if integration_ranges and is_calibrated:
+        # Interpolate functions to get exact y-values at range boundaries
+        interp_signal = interp1d(x_plot, y_plot, bounds_error=False, fill_value="extrapolate")
+        interp_baseline = interp1d(x_plot, baseline_y, bounds_error=False, fill_value="extrapolate")
+
+        colors = plt.cm.viridis(np.linspace(0, 1, len(integration_ranges)))
+        for i, (name, (start_mw, end_mw)) in enumerate(integration_ranges.items()):
+            if start_mw >= end_mw:
+                continue
+
+            # Fill area between curve and baseline
+            mask = (x_plot >= start_mw) & (x_plot <= end_mw)
+            ax.fill_between(x_plot[mask], baseline_y[mask], y_plot[mask], color=colors[i], alpha=0.4,
+                            label=f"{name} Area")
+
+            # Draw dotted vertical lines from baseline to curve
+            y_start_curve = interp_signal(start_mw)
+            y_start_base = interp_baseline(start_mw)
+            ax.plot([start_mw, start_mw], [y_start_base, y_start_curve], 'r--', linewidth=1.5)
+
+            y_end_curve = interp_signal(end_mw)
+            y_end_base = interp_baseline(end_mw)
+            ax.plot([end_mw, end_mw], [y_end_base, y_end_curve], 'r--', linewidth=1.5)
+
+    ax.set_xlabel(x_axis_label)
+    ax.set_ylabel("Signal Intensity")
+    ax.set_title("GPC Chromatogram")
+
+    if is_calibrated:  # Log scale for MW
+        ax.set_xscale('log')
+
+    ax.legend()
+    ax.grid(True, which="both", ls="--", linewidth=0.5)
+    st.pyplot(fig)
+
+    # --- Results Table ---
+    if integration_ranges and is_calibrated:
+        st.subheader("Molecular Weight Averages from Integration")
+        # Need to sort x_mw for interpolation if it's not already
+        sort_indices = np.argsort(x_mw)
+        x_mw_sorted = x_mw[sort_indices]
+        y_plot_sorted = y_plot[sort_indices]
+        baseline_y_sorted = baseline_y[sort_indices]
+
+        mw_results_df = calculate_mw_from_integration_regions(x_mw_sorted, y_plot_sorted, integration_ranges,
+                                                              baseline_y_sorted)
+
+        if not mw_results_df.empty:
+            st.dataframe(mw_results_df.style.format({
+                "Mn": "{:,.0f}",
+                "Mw": "{:,.0f}",
+                "Đ (PDI)": "{:.3f}",
+                "Area (%)": "{:.2f}%"
+            }))
         else:
-            x_label = st.text_input("X-Axis Label", "Retention Time (min)", key="x_label")
-
-        x_label_style = st.selectbox("X-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0,
-                                     key="x_label_style")
-        y_label = st.text_input("Y-Axis Label", "Normalized Response", key="y_label")
-        y_label_style = st.selectbox("Y-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0,
-                                     key="y_label_style")
-        legend_style = st.selectbox("Legend Style", ["normal", "italic", "bold", "bold italic"], index=0,
-                                    key="legend_style")
-
-    # Auto-update and manual update controls
-    auto_update = st.checkbox("Auto-update graph", value=True,
-                              help="Automatically update graph when parameters change",
-                              key="auto_update")
-
-    update_button = st.button("Update Graph",
-                              help="Manually update the graph (useful when auto-update is disabled)",
-                              key="update_button",
-                              use_container_width=True)
-
-    # Compile all parameters into a dictionary
-    params_dict = {
-        'data_source': data_source,
-        'plot_x_axis': st.session_state.plot_x_axis,
-        'mw_min': mw_min if st.session_state.plot_x_axis == "MW" else None,
-        'mw_max': mw_max if st.session_state.plot_x_axis == "MW" else None,
-        'rt_min': rt_min if st.session_state.plot_x_axis == "RT" else None,
-        'rt_max': rt_max if st.session_state.plot_x_axis == "RT" else None,
-        'y_low': y_low,
-        'y_high': y_high,
-        'peaks_n': peaks_n,
-        'w_lo': w_lo,
-        'w_hi': w_hi,
-        'baseline_method': baseline_method,
-        'baseline_ranges': baseline_ranges_inputs,
-        'peaks_txt': peaks_txt,
-        'peaks_are_mw': peaks_are_mw,
-        'plot_sum': plot_sum,
-        'custom_names': custom_names,
-        'custom_colors': custom_colors,
-        'original_data_name': original_data_name,
-        'original_data_color': original_data_color,
-        'font_family': font_family,
-        'font_size': font_size,
-        'fig_width': fig_width,
-        'fig_height': fig_height,
-        'x_label': x_label,
-        'y_label': y_label,
-        'x_label_style': x_label_style,
-        'y_label_style': y_label_style,
-        'legend_style': legend_style,
-        'integration_enabled': st.session_state.integration_enabled,
-        'auto_update': auto_update
-    }
-
-    return params_dict, data_file, cal_file
-
-
-def main():
-    """Main function to run the Gaussian deconvolution app"""
-    # Ensure tab title and icon reflect the Gaussian page
-    _set_page_meta("Deconvolution", "📊")
-
-    # Initialize session state variables
-    if 'plot_x_axis' not in st.session_state: st.session_state.plot_x_axis = "MW"
-    if 'last_fig' not in st.session_state: st.session_state.last_fig = None
-    if 'gaussian_table' not in st.session_state: st.session_state.gaussian_table = None
-    if 'integration_table' not in st.session_state: st.session_state.integration_table = None
-    if 'mw_table' not in st.session_state: st.session_state.mw_table = None
-    if 'graph_placeholder' not in st.session_state: st.session_state.graph_placeholder = None
-    if 'table_placeholder' not in st.session_state: st.session_state.table_placeholder = None
-    if 'toggle_state' not in st.session_state: st.session_state.toggle_state = "MW"
-    if 'last_params' not in st.session_state: st.session_state.last_params = {}
-    if 'integration_enabled' not in st.session_state: st.session_state.integration_enabled = False
-    if 'peak_integration_ranges' not in st.session_state: st.session_state.peak_integration_ranges = {}
-    if 'last_integration_ranges' not in st.session_state: st.session_state.last_integration_ranges = {}
-    if 'x_plot_data' not in st.session_state: st.session_state.x_plot_data = None
-    if 'y_corrected_data' not in st.session_state: st.session_state.y_corrected_data = None
-
-    # Main content area - only graph and table
-    st.title("Gaussian Deconvolution")
-
-    # Back to launcher button at top
-    if st.button("← Back to Launcher"):
-        _clear_query_params_and_rerun()
-
-    # SIDEBAR - All settings and parameters
-    with st.sidebar:
-        params_dict, data_file, cal_file = setup_sidebar_ui()
-
-    # MAIN CONTENT AREA - Only graph and table
-    # Create placeholders for graph and table if they don't exist
-    if st.session_state.graph_placeholder is None: st.session_state.graph_placeholder = st.empty()
-    if st.session_state.table_placeholder is None: st.session_state.table_placeholder = st.empty()
-
-    # Check for changes to trigger an update
-    current_params = params_dict.copy()
-    params_changed = current_params != st.session_state.get('last_params', {})
-
-    current_integration_ranges = st.session_state.get('peak_integration_ranges', {})
-    integration_ranges_changed = current_integration_ranges != st.session_state.get('last_integration_ranges', {})
-
-    should_update = st.session_state.get('update_button', False) or \
-                    (params_dict.get('auto_update', True) and (params_changed or integration_ranges_changed))
-
-    if should_update:
-        # Store current params for comparison next time
-        st.session_state.last_params = current_params
-        st.session_state.last_integration_ranges = current_integration_ranges.copy()
-
-        # Update graph and table
-        if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
-            try:
-                is_mw = st.session_state.plot_x_axis == "MW"
-                baseline_ranges = parse_ranges(params_dict['baseline_ranges'], is_mw) if params_dict[
-                                                                                             'baseline_method'] not in [
-                                                                                             "None", "arpls"] else []
-                data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
-                calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2) if is_mw and cal_file else None
-
-                manual_peaks = [float(p.strip()) for p in params_dict['peaks_txt'].split(",") if p.strip()]
-
-                x_lim = [params_dict['mw_min'], params_dict['mw_max']] if is_mw else [params_dict['rt_min'],
-                                                                                      params_dict['rt_max']]
-
-                integration_ranges = st.session_state.peak_integration_ranges if params_dict[
-                    'integration_enabled'] else None
-
-                fig, gaussian_results_df, integration_results_df, mw_results_df, x_plot, y_corrected, calibration_func = run_deconvolution(
-                    data_array=data, calib_array=calib, x_axis_type=st.session_state.plot_x_axis, x_lim=x_lim,
-                    y_lim=[params_dict['y_low'], params_dict['y_high']], n_peaks=params_dict['peaks_n'],
-                    plot_sum=params_dict['plot_sum'], manual_peaks=manual_peaks,
-                    peaks_are_mw=params_dict['peaks_are_mw'], peak_names=params_dict['custom_names'],
-                    peak_colors=params_dict['custom_colors'],
-                    peak_width_range=[int(params_dict['w_lo']), int(params_dict['w_hi'])],
-                    baseline_method=params_dict['baseline_method'], baseline_ranges=baseline_ranges,
-                    original_data_color=params_dict['original_data_color'],
-                    original_data_label=params_dict['original_data_name'], font_family=params_dict['font_family'],
-                    font_size=params_dict['font_size'], fig_size=(params_dict['fig_width'], params_dict['fig_height']),
-                    x_label=params_dict['x_label'], y_label=params_dict['y_label'],
-                    x_label_style=params_dict['x_label_style'], y_label_style=params_dict['y_label_style'],
-                    legend_style=params_dict['legend_style'], integration_ranges=integration_ranges)
-
-                st.session_state.last_fig, st.session_state.gaussian_table = fig, gaussian_results_df
-                st.session_state.integration_table, st.session_state.mw_table = integration_results_df, mw_results_df
-                st.session_state.x_plot_data, st.session_state.y_corrected_data = x_plot, y_corrected
-
-            except Exception as e:
-                st.error(f"Error processing files: {str(e)}")
-            finally:
-                if params_dict['data_source'] == "Use Example Data":
-                    for f in [cal_file, data_file]:
-                        if f:
-                            try:
-                                f.close()
-                                os.unlink(f.name)
-                            except Exception:
-                                pass
-        elif params_dict['data_source'] == "Upload My Own Data":
-            st.info("Upload your data and calibration files to begin.")
-
-    # Display results
-    if st.session_state.last_fig is not None:
-        st.session_state.graph_placeholder.pyplot(st.session_state.last_fig, dpi=600, use_container_width=True)
-
-        with st.session_state.table_placeholder.container():
-            if st.session_state.gaussian_table is not None and not st.session_state.gaussian_table.empty:
-                tab1, tab2, tab3 = st.tabs(["Gaussian Results", "Integration Results", "Molecular Weight Results"])
-                with tab1:
-                    st.dataframe(st.session_state.gaussian_table, use_container_width=True)
-                with tab2:
-                    if st.session_state.integration_table is not None and not st.session_state.integration_table.empty:
-                        st.dataframe(st.session_state.integration_table, use_container_width=True)
-                    else:
-                        st.info("Enable peak integration to see integration results.")
-                with tab3:
-                    if st.session_state.mw_table is not None and not st.session_state.mw_table.empty:
-                        st.dataframe(st.session_state.mw_table, use_container_width=True)
-                    else:
-                        st.info("Molecular weight results are available in MW mode with integration enabled.")
+            st.warning("Could not calculate MW results. Check integration ranges.")
+    elif popt is not None and is_calibrated:
+        st.subheader("Deconvolution Results")
+        # Here you would calculate Mn/Mw for each deconvoluted peak
+        st.info("MW calculation for deconvoluted Gaussian peaks is not yet implemented.")
 
 
 if __name__ == "__main__":
-    main()
+    run_deconvolution()
