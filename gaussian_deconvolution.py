@@ -19,6 +19,14 @@ def _clear_query_params_and_rerun():
             pass
     st.rerun()
 
+def _round_sig(x: float, sig: int = 3) -> float:
+    """Round to significant figures for clean default bounds."""
+    try:
+        if x == 0 or not np.isfinite(x):
+            return x
+        return float(f"{x:.{sig}g}")
+    except Exception:
+        return x
 
 def _set_page_meta(title: str, icon: str):
     """
@@ -130,14 +138,14 @@ def _setup_integration_sidebar_ui():
                     if not peak_row.empty:
                         if x_axis_type == "MW":
                             peak_center = float(peak_row.iloc[0]['Mn (g/mol)'])
-                            default_left = peak_center * 0.8
-                            default_right = peak_center * 1.2
+                            default_left = _round_sig(peak_center * 0.8, 3)
+                            default_right = _round_sig(peak_center * 1.2, 3)
                         else:
                             peak_center = float(peak_row.iloc[0]['RT (min)'])
-                            default_left = peak_center - 0.5
-                            default_right = peak_center + 0.5
+                            default_left = _round_sig(peak_center - 0.5, 3)
+                            default_right = _round_sig(peak_center + 0.5, 3)
                     else:
-                        default_left, default_right = x_min, x_max
+                        default_left, default_right = _round_sig(x_min, 3), _round_sig(x_max, 3)
 
                     integration_ranges[peak_name] = {"enabled": True, "left": default_left, "right": default_right}
 
@@ -153,33 +161,6 @@ def _setup_integration_sidebar_ui():
                         if current_right < current_left:
                             current_right = current_left
 
-                        # --- Logarithmic slider for MW, linear for RT ---
-                        if x_axis_type == "MW":
-                            # Use logarithmic slider for MW
-                            safe_min = max(x_min, 1.0)  # Avoid log(0)
-                            log_min, log_max = np.log10(safe_min), np.log10(x_max)
-
-                            val_left = np.log10(max(safe_min, current_left))
-                            val_right = np.log10(max(safe_min, current_right))
-
-                            if val_right < val_left:
-                                val_right = val_left
-
-                            log_range = st.slider("Adjust Range (Log Scale)",
-                                                  min_value=log_min,
-                                                  max_value=log_max,
-                                                  value=(val_left, val_right),
-                                                  key=f"int_slider_{peak_name}")
-
-                            slider_left, slider_right = 10 ** log_range[0], 10 ** log_range[1]
-                        else:
-                            # Use linear slider for RT
-                            slider_left, slider_right = st.slider("Adjust Range",
-                                                                  min_value=x_min,
-                                                                  max_value=x_max,
-                                                                  value=(current_left, current_right),
-                                                                  step=0.01,
-                                                                  key=f"int_slider_{peak_name}")
 
                         # --- Number inputs for precise control ---
                         st.write("Precise bounds:")
@@ -188,7 +169,7 @@ def _setup_integration_sidebar_ui():
                             final_left = st.number_input("Lower Bound",
                                                          min_value=float(x_min),
                                                          max_value=float(x_max),
-                                                         value=float(slider_left),
+                                                         value=float(current_left),
                                                          key=f"int_left_{peak_name}",
                                                          format="%e" if x_axis_type == "MW" else "%.3f",
                                                          step=100.0 if x_axis_type == "MW" else 0.01)
@@ -196,7 +177,7 @@ def _setup_integration_sidebar_ui():
                             final_right = st.number_input("Upper Bound",
                                                           min_value=float(x_min),
                                                           max_value=float(x_max),
-                                                          value=float(slider_right),
+                                                          value=float(current_right),
                                                           key=f"int_right_{peak_name}",
                                                           format="%e" if x_axis_type == "MW" else "%.3f",
                                                           step=100.0 if x_axis_type == "MW" else 0.01)
@@ -212,7 +193,7 @@ def _setup_integration_sidebar_ui():
                             y_positive = np.maximum(st.session_state.y_corrected_data, 0)
                             mask = (x_plot >= final_left) & (x_plot <= final_right)
                             if np.sum(mask) > 0:
-                                area = np.trapz(y_positive[mask], x_plot[mask])
+                                area = np.trapezoid(y_positive[mask], x_plot[mask])
                                 st.metric(f"Area for {peak_name}", f"{area:.4f}")
                     else:
                         integration_ranges[peak_name] = {"enabled": False, "left": x_min, "right": x_max}
