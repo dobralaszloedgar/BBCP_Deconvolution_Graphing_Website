@@ -436,5 +436,4 @@ def run_deconvolution(
         else:
             results_df = pd.DataFrame(columns=['Peak', 'RT (min)', 'Area %'])
 
-    return fig, results_df
-
+    return fig, results_df, x_plot, y_corrected

@@ -56,6 +56,14 @@ def _set_page_meta(title: str, icon: str):
         st.markdown(js, unsafe_allow_html=True)
 
 
+def integrate_peak_region(x_data, y_data, left_bound, right_bound):
+    """Integrate a region of the chromatogram between left and right bounds"""
+    mask = (x_data >= left_bound) & (x_data <= right_bound)
+    if np.sum(mask) == 0:
+        return 0.0
+    return np.trapz(y_data[mask], x_data[mask])
+
+
 def main():
     # Ensure tab title and icon reflect the Gaussian page
     _set_page_meta("Deconvolution", "📊")
@@ -75,6 +83,16 @@ def main():
         st.session_state.toggle_state = "MW"  # Track toggle state separately
     if 'last_params' not in st.session_state:
         st.session_state.last_params = {}
+    if 'integration_enabled' not in st.session_state:
+        st.session_state.integration_enabled = False
+    if 'peak_integration_ranges' not in st.session_state:
+        st.session_state.peak_integration_ranges = {}
+    if 'integration_results' not in st.session_state:
+        st.session_state.integration_results = {}
+    if 'x_plot_data' not in st.session_state:
+        st.session_state.x_plot_data = None
+    if 'y_corrected_data' not in st.session_state:
+        st.session_state.y_corrected_data = None
 
     # Main content area - only graph and table
     st.title("Gaussian Deconvolution")
@@ -252,6 +270,98 @@ def main():
 
             plot_sum = st.checkbox("Plot Sum Of Gaussians", False, key="plot_sum")
 
+        # Peak Integration Tab
+        with st.expander("Peak Integration", expanded=False):
+            integration_enabled = st.checkbox(
+                "Enable Peak Integration",
+                value=st.session_state.integration_enabled,
+                key="integration_enabled"
+            )
+
+            if integration_enabled:
+                st.session_state.integration_enabled = True
+
+                if st.session_state.last_table is not None and st.session_state.x_plot_data is not None:
+                    st.write("Select peaks to integrate and specify integration ranges:")
+
+                    # Get peak names from the last table
+                    peak_names = st.session_state.last_table['Peak'].tolist()
+
+                    # Initialize integration ranges if not exists
+                    if not st.session_state.peak_integration_ranges:
+                        for name in peak_names:
+                            st.session_state.peak_integration_ranges[name] = {"enabled": False, "left": 0, "right": 0}
+
+                    # Create integration controls for each peak
+                    for i, peak_name in enumerate(peak_names):
+                        col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
+
+                        with col1:
+                            enabled = st.checkbox(
+                                f"Integrate {peak_name}",
+                                value=st.session_state.peak_integration_ranges[peak_name]["enabled"],
+                                key=f"integrate_{peak_name}"
+                            )
+                            st.session_state.peak_integration_ranges[peak_name]["enabled"] = enabled
+
+                        if enabled:
+                            # Get default values based on peak position
+                            peak_value = st.session_state.last_table.iloc[i][1]  # Get peak value (Mn or RT)
+
+                            with col2:
+                                # Set appropriate step based on x-axis type
+                                step_val = 100.0 if st.session_state.plot_x_axis == "MW" else 0.1
+                                left_bound = st.number_input(
+                                    f"Left bound {peak_name}",
+                                    value=st.session_state.peak_integration_ranges[peak_name].get("left",
+                                                                                                  peak_value * 0.8),
+                                    step=step_val,
+                                    key=f"left_{peak_name}"
+                                )
+                                st.session_state.peak_integration_ranges[peak_name]["left"] = left_bound
+
+                            with col3:
+                                right_bound = st.number_input(
+                                    f"Right bound {peak_name}",
+                                    value=st.session_state.peak_integration_ranges[peak_name].get("right",
+                                                                                                  peak_value * 1.2),
+                                    step=step_val,
+                                    key=f"right_{peak_name}"
+                                )
+                                st.session_state.peak_integration_ranges[peak_name]["right"] = right_bound
+
+                            with col4:
+                                # Calculate and display area
+                                if st.session_state.y_corrected_data is not None:
+                                    area = integrate_peak_region(
+                                        st.session_state.x_plot_data,
+                                        st.session_state.y_corrected_data,
+                                        left_bound,
+                                        right_bound
+                                    )
+                                    st.metric(f"Area {peak_name}", f"{area:.4f}")
+
+                    # Calculate total integrated area
+                    total_area = 0
+                    for peak_name in peak_names:
+                        if st.session_state.peak_integration_ranges[peak_name]["enabled"]:
+                            left = st.session_state.peak_integration_ranges[peak_name]["left"]
+                            right = st.session_state.peak_integration_ranges[peak_name]["right"]
+                            area = integrate_peak_region(
+                                st.session_state.x_plot_data,
+                                st.session_state.y_corrected_data,
+                                left,
+                                right
+                            )
+                            total_area += area
+
+                    st.metric("Total Integrated Area", f"{total_area:.4f}")
+
+                else:
+                    st.info("Run deconvolution first to enable peak integration")
+            else:
+                st.session_state.integration_enabled = False
+
         # Appearance Settings
         with st.expander("Appearance Settings", expanded=False):
             common_fonts = sorted([
@@ -398,7 +508,7 @@ def main():
                     x_lim = [rt_min, rt_max]
 
                 # Run deconvolution
-                fig, table = run_deconvolution(
+                fig, table, x_plot, y_corrected = run_deconvolution(
                     data_array=data,
                     calib_array=calib,
                     x_axis_type=st.session_state.plot_x_axis,
@@ -428,6 +538,8 @@ def main():
                 # Store the results
                 st.session_state.last_fig = fig
                 st.session_state.last_table = table
+                st.session_state.x_plot_data = x_plot
+                st.session_state.y_corrected_data = y_corrected
 
                 # Update the display with the new graph and table
                 with st.session_state.graph_placeholder:
