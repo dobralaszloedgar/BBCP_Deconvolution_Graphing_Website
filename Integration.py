@@ -23,7 +23,7 @@ def integrate_peak_region(x_data, y_data, left_bound, right_bound):
 
     # Only integrate positive values (above baseline)
     y_positive = np.maximum(y_data[mask], 0)
-    return np.trapz(y_positive, x_data[mask])
+    return np.trapezoid(y_positive, x_data[mask])
 
 
 def calculate_molecular_weight_averages(x_mw, y_signal, peak_ranges):
@@ -58,10 +58,10 @@ def calculate_molecular_weight_averages(x_mw, y_signal, peak_ranges):
 
             # Calculate molecular weight averages
             # Number average molecular weight (Mn)
-            mn = np.trapz(y_region, x_region) / np.trapz(y_region / x_region, x_region)
+            mn = np.trapezoid(y_region, x_region) / np.trapezoid(y_region / x_region, x_region)
 
             # Weight average molecular weight (Mw)
-            mw = np.trapz(y_region * x_region, x_region) / np.trapz(y_region, x_region)
+            mw = np.trapezoid(y_region * x_region, x_region) / np.trapezoid(y_region, x_region)
 
             # Dispersity (Đ)
             dispersity = mw / mn if mn > 0 else 0
