@@ -188,13 +188,6 @@ def _setup_integration_sidebar_ui():
 
                         integration_ranges[peak_name] = {"enabled": True, "left": final_left, "right": final_right}
 
-                        # Show current area for this peak
-                        if st.session_state.get('y_corrected_data') is not None:
-                            y_positive = np.maximum(st.session_state.y_corrected_data, 0)
-                            mask = (x_plot >= final_left) & (x_plot <= final_right)
-                            if np.sum(mask) > 0:
-                                area = np.trapezoid(y_positive[mask], x_plot[mask])
-                                st.metric(f"Area for {peak_name}", f"{area:.4f}")
                     else:
                         integration_ranges[peak_name] = {"enabled": False, "left": x_min, "right": x_max}
 
