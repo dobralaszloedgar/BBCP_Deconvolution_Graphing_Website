@@ -128,10 +128,19 @@ def _setup_integration_sidebar_ui():
 
         if x_plot is not None:
             integration_ranges = st.session_state.get('peak_integration_ranges', {})
+            current_peaks_n = st.session_state.get('peaks_n', 4)
+
+            # Filter peak_names to only include the first n peaks based on current slider
+            peak_names = peak_names[:current_peaks_n]
+
             x_min, x_max = float(np.min(x_plot)), float(np.max(x_plot))
             x_axis_type = st.session_state.plot_x_axis
 
-            for peak_name in peak_names:
+            for i, peak_name in enumerate(peak_names):
+                # Only process peaks up to the current count
+                if i >= current_peaks_n:
+                    continue
+
                 if peak_name not in integration_ranges:
                     # Set default range around the peak center if available
                     peak_row = st.session_state.gaussian_table[st.session_state.gaussian_table['Peak'] == peak_name]
@@ -161,7 +170,6 @@ def _setup_integration_sidebar_ui():
                         if current_right < current_left:
                             current_right = current_left
 
-
                         # --- Number inputs for precise control ---
                         st.write("Precise bounds:")
                         left_col, right_col = st.columns(2)
@@ -190,6 +198,12 @@ def _setup_integration_sidebar_ui():
 
                     else:
                         integration_ranges[peak_name] = {"enabled": False, "left": x_min, "right": x_max}
+
+            # Remove any integration ranges for peaks beyond current count
+            current_peak_names = set(peak_names)
+            for peak_name in list(integration_ranges.keys()):
+                if peak_name not in current_peak_names:
+                    del integration_ranges[peak_name]
 
             st.session_state.peak_integration_ranges = integration_ranges
 
@@ -310,11 +324,16 @@ def setup_sidebar_ui():
 
         custom_names = []
         custom_colors = []
+        peak_enabled = []  # NEW: Track which peaks are enabled
 
         original_data_name = st.text_input("Original Data Name", value="Original Data", key="original_data_name")
         original_data_color = st.color_picker("Original Data Color", value="#ef476f", key="original_data_color")
 
         for i in range(peaks_n):
+            # NEW: Peak enable/disable toggle
+            enabled = st.checkbox(f"Enable Peak {i + 1}", value=True, key=f"peak_enabled_{i}")
+            peak_enabled.append(enabled)
+
             name = st.text_input(
                 f"Peak {i + 1} Name",
                 value=default_names[i] if i < len(default_names) else f"Peak {i + 1}",
@@ -330,6 +349,9 @@ def setup_sidebar_ui():
             custom_colors.append(color)
 
         plot_sum = st.checkbox("Plot Sum Of Gaussians", False, key="plot_sum")
+
+    # Store peak enabled states in session state
+    st.session_state.peak_enabled_states = {name: enabled for name, enabled in zip(custom_names, peak_enabled)}
 
     # Peak Integration
     with st.expander("Peak Integration", expanded=False):
@@ -401,6 +423,7 @@ def setup_sidebar_ui():
         'plot_sum': plot_sum,
         'custom_names': custom_names,
         'custom_colors': custom_colors,
+        'peak_enabled': peak_enabled,  # NEW
         'original_data_name': original_data_name,
         'original_data_color': original_data_color,
         'font_family': font_family,
@@ -439,6 +462,7 @@ def main():
     if 'last_integration_ranges' not in st.session_state: st.session_state.last_integration_ranges = {}
     if 'x_plot_data' not in st.session_state: st.session_state.x_plot_data = None
     if 'y_corrected_data' not in st.session_state: st.session_state.y_corrected_data = None
+    if 'peak_enabled_states' not in st.session_state: st.session_state.peak_enabled_states = {}
 
     # Main content area - only graph and table
     st.title("Gaussian Deconvolution")
@@ -495,6 +519,7 @@ def main():
                     plot_sum=params_dict['plot_sum'], manual_peaks=manual_peaks,
                     peaks_are_mw=params_dict['peaks_are_mw'], peak_names=params_dict['custom_names'],
                     peak_colors=params_dict['custom_colors'],
+                    peak_enabled=params_dict['peak_enabled'],  # NEW
                     peak_width_range=[int(params_dict['w_lo']), int(params_dict['w_hi'])],
                     baseline_method=params_dict['baseline_method'], baseline_ranges=baseline_ranges,
                     original_data_color=params_dict['original_data_color'],

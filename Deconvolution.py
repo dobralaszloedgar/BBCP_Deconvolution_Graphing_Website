@@ -191,7 +191,7 @@ def calculate_molecular_weight_averages(x_mw, y_signal, peak_ranges):
     return pd.DataFrame(results)
 
 
-def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, peak_colors,
+def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, peak_colors, peak_enabled,  # NEW parameter
                 original_data_label, original_data_color, plot_sum, x_axis_type, x_lim, y_lim,
                 font_family, font_size, fig_size, x_label, y_label, x_label_style,
                 y_label_style, legend_style, integration_ranges=None):
@@ -203,14 +203,22 @@ def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, pea
     # Original data
     ax.plot(x_plot, y_corrected, label=original_data_label, linewidth=2, color=original_data_color, zorder=2)
 
-    # Fitted peaks
+    # Fitted peaks - only plot enabled peaks
     if best_fit is not None and len(best_fit) > 0:
         for i, (fit, _) in enumerate(zip(best_fit, area_percentages)):
-            ax.plot(x_plot, fit, color=peak_colors[i], label=peak_names[i], zorder=2)
+            if i < len(peak_enabled) and peak_enabled[i]:  # NEW: Only plot if enabled
+                ax.plot(x_plot, fit, color=peak_colors[i], label=peak_names[i], zorder=2)
 
         if plot_sum:
-            sum_gaussians = np.sum(best_fit, axis=0)
-            ax.plot(x_plot, sum_gaussians, '--', color='black', linewidth=1.5, label='Sum of Gaussians', zorder=2)
+            # NEW: Only sum enabled peaks
+            enabled_fits = []
+            for i, fit in enumerate(best_fit):
+                if i < len(peak_enabled) and peak_enabled[i]:
+                    enabled_fits.append(fit)
+
+            if enabled_fits:
+                sum_gaussians = np.sum(enabled_fits, axis=0)
+                ax.plot(x_plot, sum_gaussians, '--', color='black', linewidth=1.5, label='Sum of Gaussians', zorder=2)
 
     # Shade integration ranges only under the original curve and only within visible x-limits
     if integration_ranges:
@@ -302,6 +310,7 @@ def run_deconvolution(
         peaks_are_mw=True,
         peak_names=["Peak 1", "Peak 2", "Peak 3", "Peak 4"],
         peak_colors=['#FFbf00', '#06d6a0', '#118ab2', '#073b4c'],
+        peak_enabled=[True, True, True, True],  # NEW parameter
         peak_width_range=[100, 400],
         baseline_method='None',
         baseline_ranges=[],
@@ -486,7 +495,7 @@ def run_deconvolution(
             mw_results_df = calculate_molecular_weight_averages(x_plot, y_corrected, integration_ranges)
 
     fig = create_plot(
-        x_plot, y_corrected, best_fit, area_percentages, peak_names, peak_colors,
+        x_plot, y_corrected, best_fit, area_percentages, peak_names, peak_colors, peak_enabled,  # NEW parameter
         original_data_label, original_data_color, plot_sum, x_axis_type, x_lim, y_lim,
         font_family, font_size, fig_size, x_label, y_label, x_label_style,
         y_label_style, legend_style, integration_ranges
