@@ -19,6 +19,7 @@ def _clear_query_params_and_rerun():
             pass
     st.rerun()
 
+
 def _round_sig(x: float, sig: int = 3) -> float:
     """Round to significant figures for clean default bounds."""
     try:
@@ -27,6 +28,7 @@ def _round_sig(x: float, sig: int = 3) -> float:
         return float(f"{x:.{sig}g}")
     except Exception:
         return x
+
 
 def _set_page_meta(title: str, icon: str):
     """
@@ -118,6 +120,9 @@ def _setup_integration_sidebar_ui():
     This function modifies st.session_state.peak_integration_ranges directly.
     """
     if not st.session_state.get('integration_enabled', False):
+        # Clear integration tables when integration is disabled
+        st.session_state.integration_table = None
+        st.session_state.mw_table = None
         return
 
     # Check if we have peak names from a previous run to build the UI
@@ -324,14 +329,18 @@ def setup_sidebar_ui():
 
         custom_names = []
         custom_colors = []
-        peak_enabled = []  # NEW: Track which peaks are enabled
+        peak_enabled = []
 
         original_data_name = st.text_input("Original Data Name", value="Original Data", key="original_data_name")
         original_data_color = st.color_picker("Original Data Color", value="#ef476f", key="original_data_color")
 
         for i in range(peaks_n):
-            # NEW: Peak enable/disable toggle
-            enabled = st.checkbox(f"Enable Peak {i + 1}", value=True, key=f"peak_enabled_{i}")
+            # Initialize peak enabled state if not exists
+            peak_key = f"peak_enabled_{i}"
+            if peak_key not in st.session_state:
+                st.session_state[peak_key] = True
+
+            enabled = st.checkbox(f"Enable Peak {i + 1}", value=st.session_state[peak_key], key=peak_key)
             peak_enabled.append(enabled)
 
             name = st.text_input(
@@ -349,9 +358,6 @@ def setup_sidebar_ui():
             custom_colors.append(color)
 
         plot_sum = st.checkbox("Plot Sum Of Gaussians", False, key="plot_sum")
-
-    # Store peak enabled states in session state
-    st.session_state.peak_enabled_states = {name: enabled for name, enabled in zip(custom_names, peak_enabled)}
 
     # Peak Integration
     with st.expander("Peak Integration", expanded=False):
@@ -423,7 +429,7 @@ def setup_sidebar_ui():
         'plot_sum': plot_sum,
         'custom_names': custom_names,
         'custom_colors': custom_colors,
-        'peak_enabled': peak_enabled,  # NEW
+        'peak_enabled': peak_enabled,
         'original_data_name': original_data_name,
         'original_data_color': original_data_color,
         'font_family': font_family,
@@ -462,7 +468,6 @@ def main():
     if 'last_integration_ranges' not in st.session_state: st.session_state.last_integration_ranges = {}
     if 'x_plot_data' not in st.session_state: st.session_state.x_plot_data = None
     if 'y_corrected_data' not in st.session_state: st.session_state.y_corrected_data = None
-    if 'peak_enabled_states' not in st.session_state: st.session_state.peak_enabled_states = {}
 
     # Main content area - only graph and table
     st.title("Gaussian Deconvolution")
@@ -519,7 +524,7 @@ def main():
                     plot_sum=params_dict['plot_sum'], manual_peaks=manual_peaks,
                     peaks_are_mw=params_dict['peaks_are_mw'], peak_names=params_dict['custom_names'],
                     peak_colors=params_dict['custom_colors'],
-                    peak_enabled=params_dict['peak_enabled'],  # NEW
+                    peak_enabled=params_dict['peak_enabled'],
                     peak_width_range=[int(params_dict['w_lo']), int(params_dict['w_hi'])],
                     baseline_method=params_dict['baseline_method'], baseline_ranges=baseline_ranges,
                     original_data_color=params_dict['original_data_color'],
@@ -557,12 +562,16 @@ def main():
                 with tab1:
                     st.dataframe(st.session_state.gaussian_table, use_container_width=True)
                 with tab2:
-                    if st.session_state.integration_table is not None and not st.session_state.integration_table.empty:
+                    if (st.session_state.integration_table is not None and
+                            not st.session_state.integration_table.empty and
+                            st.session_state.integration_enabled):
                         st.dataframe(st.session_state.integration_table, use_container_width=True)
                     else:
                         st.info("Enable peak integration to see integration results.")
                 with tab3:
-                    if st.session_state.mw_table is not None and not st.session_state.mw_table.empty:
+                    if (st.session_state.mw_table is not None and
+                            not st.session_state.mw_table.empty and
+                            st.session_state.integration_enabled):
                         st.dataframe(st.session_state.mw_table, use_container_width=True)
                     else:
                         st.info("Molecular weight results are available in MW mode with integration enabled.")
