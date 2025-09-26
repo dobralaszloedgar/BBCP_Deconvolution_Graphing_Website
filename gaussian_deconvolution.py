@@ -127,7 +127,7 @@ def _setup_integration_sidebar_ui():
 
     # Check if we have peak names from a previous run to build the UI
     if 'gaussian_table' in st.session_state and st.session_state.gaussian_table is not None and not st.session_state.gaussian_table.empty:
-        st.sidebar.subheader("Integration Ranges")
+        st.subheader("Integration Ranges")
         peak_names = st.session_state.gaussian_table['Peak'].tolist()
         x_plot = st.session_state.get('x_plot_data')
 
@@ -163,7 +163,7 @@ def _setup_integration_sidebar_ui():
 
                     integration_ranges[peak_name] = {"enabled": True, "left": default_left, "right": default_right}
 
-                with st.sidebar.expander(f"Range for {peak_name}", expanded=False):
+                with st.expander(f"Range for {peak_name}", expanded=False):
                     enabled = st.checkbox("Integrate", value=integration_ranges[peak_name].get("enabled", True),
                                           key=f"int_enabled_{peak_name}")
 
@@ -213,7 +213,7 @@ def _setup_integration_sidebar_ui():
             st.session_state.peak_integration_ranges = integration_ranges
 
     else:
-        st.sidebar.info("Run deconvolution once to define integration ranges.")
+        st.info("Run deconvolution once to define integration ranges.")
 
 
 def setup_sidebar_ui():
@@ -376,11 +376,10 @@ def setup_sidebar_ui():
             key="integration_enabled_checkbox"
         )
         st.session_state.integration_enabled = integration_enabled
-        _setup_integration_sidebar_ui()
 
-
-    # Call the new function to render integration controls if enabled
-    #_setup_integration_sidebar_ui()
+        # Call the integration ranges UI directly inside this expander
+        if integration_enabled:
+            _setup_integration_sidebar_ui()
 
     # Appearance Settings
     with st.expander("Appearance Settings", expanded=False):
@@ -397,21 +396,17 @@ def setup_sidebar_ui():
         fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5, key="fig_width")
         fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5, key="fig_height")
 
-        # FIX: Dynamically set default x-label based on current x-axis type
+        # Set default x-label based on current x-axis type
         if st.session_state.plot_x_axis == "MW":
             x_label_default = "Molecular weight (g/mol)"
         else:
             x_label_default = "Retention Time (min)"
 
-        # Use the current value if it exists, otherwise use the appropriate default
-        current_x_label = st.session_state.get('x_label', x_label_default)
+        # Use session state for x_label if it exists, otherwise use default
+        if 'x_label' not in st.session_state:
+            st.session_state.x_label = x_label_default
 
-        # Check if we need to update the default due to axis change
-        if (st.session_state.plot_x_axis == "MW" and current_x_label == "Retention Time (min)") or \
-                (st.session_state.plot_x_axis == "RT" and current_x_label == "Molecular weight (g/mol)"):
-            current_x_label = x_label_default
-
-        x_label = st.text_input("X-Axis Label", value=current_x_label, key="x_label")
+        x_label = st.text_input("X-Axis Label", value=st.session_state.x_label, key="x_label")
 
         x_label_style = st.selectbox("X-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0,
                                      key="x_label_style")
@@ -458,7 +453,7 @@ def setup_sidebar_ui():
         'font_size': font_size,
         'fig_width': fig_width,
         'fig_height': fig_height,
-        'x_label': x_label,  # Use the widget value directly
+        'x_label': x_label,
         'y_label': y_label,
         'x_label_style': x_label_style,
         'y_label_style': y_label_style,
@@ -476,23 +471,42 @@ def main():
     _set_page_meta("Deconvolution", "📊")
 
     # Initialize session state variables
-    if 'plot_x_axis' not in st.session_state: st.session_state.plot_x_axis = "MW"
-    if 'last_fig' not in st.session_state: st.session_state.last_fig = None
-    if 'gaussian_table' not in st.session_state: st.session_state.gaussian_table = None
-    if 'integration_table' not in st.session_state: st.session_state.integration_table = None
-    if 'mw_table' not in st.session_state: st.session_state.mw_table = None
-    if 'graph_placeholder' not in st.session_state: st.session_state.graph_placeholder = None
-    if 'table_placeholder' not in st.session_state: st.session_state.table_placeholder = None
-    if 'toggle_state' not in st.session_state: st.session_state.toggle_state = "MW"
-    if 'last_params' not in st.session_state: st.session_state.last_params = {}
-    if 'integration_enabled' not in st.session_state: st.session_state.integration_enabled = False
-    if 'peak_integration_ranges' not in st.session_state: st.session_state.peak_integration_ranges = {}
-    if 'last_integration_ranges' not in st.session_state: st.session_state.last_integration_ranges = {}
-    if 'x_plot_data' not in st.session_state: st.session_state.x_plot_data = None
-    if 'y_corrected_data' not in st.session_state: st.session_state.y_corrected_data = None
-    if 'last_data_file' not in st.session_state: st.session_state.last_data_file = None
-    if 'last_cal_file' not in st.session_state: st.session_state.last_cal_file = None
-    if 'last_data_source' not in st.session_state: st.session_state.last_data_source = None
+    if 'plot_x_axis' not in st.session_state:
+        st.session_state.plot_x_axis = "MW"
+    if 'last_fig' not in st.session_state:
+        st.session_state.last_fig = None
+    if 'gaussian_table' not in st.session_state:
+        st.session_state.gaussian_table = None
+    if 'integration_table' not in st.session_state:
+        st.session_state.integration_table = None
+    if 'mw_table' not in st.session_state:
+        st.session_state.mw_table = None
+    if 'graph_placeholder' not in st.session_state:
+        st.session_state.graph_placeholder = None
+    if 'table_placeholder' not in st.session_state:
+        st.session_state.table_placeholder = None
+    if 'toggle_state' not in st.session_state:
+        st.session_state.toggle_state = "MW"
+    if 'last_params' not in st.session_state:
+        st.session_state.last_params = {}
+    if 'integration_enabled' not in st.session_state:
+        st.session_state.integration_enabled = False
+    if 'peak_integration_ranges' not in st.session_state:
+        st.session_state.peak_integration_ranges = {}
+    if 'last_integration_ranges' not in st.session_state:
+        st.session_state.last_integration_ranges = {}
+    if 'x_plot_data' not in st.session_state:
+        st.session_state.x_plot_data = None
+    if 'y_corrected_data' not in st.session_state:
+        st.session_state.y_corrected_data = None
+    if 'last_data_file' not in st.session_state:
+        st.session_state.last_data_file = None
+    if 'last_cal_file' not in st.session_state:
+        st.session_state.last_cal_file = None
+    if 'last_data_source' not in st.session_state:
+        st.session_state.last_data_source = None
+    if 'x_label' not in st.session_state:
+        st.session_state.x_label = "Molecular weight (g/mol)"  # Default value
 
     # Main content area - only graph and table
     st.title("Gaussian Deconvolution")
@@ -507,8 +521,22 @@ def main():
 
     # NEW: Check if data files have changed and clear previous results
     current_data_source = params_dict['data_source']
-    current_data_file_name = data_file.name if data_file else None
-    current_cal_file_name = cal_file.name if cal_file else None
+
+    # Safe way to get file names without causing errors
+    current_data_file_name = None
+    current_cal_file_name = None
+
+    if data_file is not None:
+        if hasattr(data_file, 'name'):
+            current_data_file_name = data_file.name
+        elif hasattr(data_file, 'getvalue'):  # For file-like objects
+            current_data_file_name = "uploaded_data.txt"
+
+    if cal_file is not None:
+        if hasattr(cal_file, 'name'):
+            current_cal_file_name = cal_file.name
+        elif hasattr(cal_file, 'getvalue'):  # For file-like objects
+            current_cal_file_name = "uploaded_cal.txt"
 
     # Check if data source or files have changed
     data_changed = (
@@ -540,8 +568,10 @@ def main():
 
     # MAIN CONTENT AREA - Only graph and table
     # Create placeholders for graph and table if they don't exist
-    if st.session_state.graph_placeholder is None: st.session_state.graph_placeholder = st.empty()
-    if st.session_state.table_placeholder is None: st.session_state.table_placeholder = st.empty()
+    if st.session_state.graph_placeholder is None:
+        st.session_state.graph_placeholder = st.empty()
+    if st.session_state.table_placeholder is None:
+        st.session_state.table_placeholder = st.empty()
 
     # Check for changes to trigger an update
     current_params = params_dict.copy()
@@ -565,6 +595,13 @@ def main():
                 baseline_ranges = parse_ranges(params_dict['baseline_ranges'], is_mw) if params_dict[
                                                                                              'baseline_method'] not in [
                                                                                              "None", "arpls"] else []
+
+                # Reset file pointers to beginning if they are file objects
+                if hasattr(data_file, 'seek'):
+                    data_file.seek(0)
+                if cal_file and hasattr(cal_file, 'seek'):
+                    cal_file.seek(0)
+
                 data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
                 calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2) if is_mw and cal_file else None
 
