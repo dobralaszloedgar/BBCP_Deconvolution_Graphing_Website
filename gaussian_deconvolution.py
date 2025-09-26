@@ -290,8 +290,7 @@ def setup_sidebar_ui():
 
     # Number of Peaks
     peaks_n = st.slider("Number Of Peaks", 1, 10, 4, key="peaks_n")
-    w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10, key="w_lo")
-    w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10, key="w_hi")
+
 
     # Basic Parameters
     with st.expander("Basic Parameters", expanded=False):
@@ -302,6 +301,8 @@ def setup_sidebar_ui():
             rt_min = st.number_input("RT Lower Bound (min)", 0.0, 100.0, 8.0, step=0.1, key="rt_min")
             rt_max = st.number_input("RT Upper Bound (min)", 0.0, 100.0, 19.0, step=0.1, key="rt_max")
 
+        w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10, key="w_lo")
+        w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10, key="w_hi")
         y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01, key="y_low")
         y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01, key="y_high")
 
