@@ -275,7 +275,7 @@ def setup_sidebar_ui():
         # NEW: Update x_label when toggle changes
         if new_toggle_state == "MW":
             st.session_state.x_label = "Molecular weight (g/mol)"
-        elif new_toggle_state == "RT":
+        else:
             st.session_state.x_label = "Retention Time (min)"
 
     if st.session_state.plot_x_axis == "MW" and cal_file is None and data_source == "Upload My Own Data":
