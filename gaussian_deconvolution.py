@@ -377,7 +377,7 @@ def setup_sidebar_ui():
         plot_sum = st.checkbox("Plot Sum Of Gaussians", False, key="plot_sum")
 
     # Residual Peak Settings
-    with st.expander("Residual Peak Settings", expanded=False):
+    with st.expander("Residuals Plot", expanded=False):
         # Store previous sum state before changing it
         if "previous_plot_sum_state" not in st.session_state:
             st.session_state.previous_plot_sum_state = st.session_state.get("plot_sum", False)
@@ -395,12 +395,12 @@ def setup_sidebar_ui():
                     st.session_state["plot_sum"] = False
 
         plot_residual = st.checkbox(
-            "Plot Residual Peak",
+            "Plot Residuals",
             False,
             key="plot_residual",
             on_change=_sync_plot_sum_on_residual,
         )
-        residual_color = st.color_picker("Residual Peak Color", value="#888888", key="residual_color")
+        residual_color = st.color_picker("Residuals Color", value="#888888", key="residual_color")
 
         if plot_residual:
             st.info("✓ Sum of Gaussians is automatically enabled when plotting residuals")
@@ -436,7 +436,7 @@ def setup_sidebar_ui():
             st.session_state.peak_integration_ranges = {}
 
     # Appearance Settings
-    with st.expander("Figure Appearance Settings", expanded=False):
+    with st.expander("Figure Appearance", expanded=False):
         common_fonts = sorted([
             "Arial", "Times New Roman", "Helvetica", "Verdana", "Georgia",
             "Courier New", "Tahoma", "Trebuchet MS", "Palatino", "Garamond",
