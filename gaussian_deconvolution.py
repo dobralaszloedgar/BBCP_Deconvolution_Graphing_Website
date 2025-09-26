@@ -288,6 +288,11 @@ def setup_sidebar_ui():
     if st.session_state.plot_x_axis == "MW" and cal_file is None and data_source == "Upload My Own Data":
         st.warning("Calibration file required for molecular weight plotting")
 
+    # Number of Peaks
+    peaks_n = st.slider("Number Of Peaks", 1, 10, 4, key="peaks_n")
+    w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10, key="w_lo")
+    w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10, key="w_hi")
+
     # Basic Parameters
     with st.expander("Basic Parameters", expanded=False):
         if st.session_state.plot_x_axis == "MW":
@@ -300,9 +305,13 @@ def setup_sidebar_ui():
         y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01, key="y_low")
         y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01, key="y_high")
 
-        peaks_n = st.slider("Number Of Peaks", 1, 10, 4, key="peaks_n")
-        w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10, key="w_lo")
-        w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10, key="w_hi")
+        # Manual peaks
+        unit_label = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
+        peaks_txt = st.text_input(f"Manual Peaks (comma list, blank=auto) in {unit_label}", "", key="peaks_txt")
+        peaks_are_mw = st.checkbox(f"Manual Peaks Given As {unit_label}", True, key="peaks_are_mw")
+
+    # Baseline Correction
+    with st.expander("Baseline Correction", expanded=False):
         baseline_method = st.selectbox(
             "Baseline Correction Method",
             ["None", "arpls", "flat", "linear", "quadratic"],
@@ -327,13 +336,8 @@ def setup_sidebar_ui():
                 )
                 baseline_ranges_inputs.append(range_input)
 
-        # Manual peaks
-        unit_label = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
-        peaks_txt = st.text_input(f"Manual Peaks (comma list, blank=auto) in {unit_label}", "", key="peaks_txt")
-        peaks_are_mw = st.checkbox(f"Manual Peaks Given As {unit_label}", True, key="peaks_are_mw")
-
     # Peak Colors And Names
-    with st.expander("Peak Colors And Names", expanded=False):
+    with st.expander("Peak Selection and Appearance", expanded=False):
         default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5",
                          "Peak 6", "Peak 7", "Peak 8", "Peak 9", "Peak 10"]
         default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c', '#a83232',
@@ -431,7 +435,7 @@ def setup_sidebar_ui():
             st.session_state.peak_integration_ranges = {}
 
     # Appearance Settings
-    with st.expander("Appearance Settings", expanded=False):
+    with st.expander("Figure Appearance Settings", expanded=False):
         common_fonts = sorted([
             "Arial", "Times New Roman", "Helvetica", "Verdana", "Georgia",
             "Courier New", "Tahoma", "Trebuchet MS", "Palatino", "Garamond",
