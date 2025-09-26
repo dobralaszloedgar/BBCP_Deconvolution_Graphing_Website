@@ -374,24 +374,28 @@ def setup_sidebar_ui():
     # Residual Peak Settings
     with st.expander("Residual Peak Settings", expanded=True):
         # Store previous sum state before changing it
-        #if 'previous_plot_sum_state' not in st.session_state:
-            #st.session_state.previous_plot_sum_state = st.session_state.get('plot_sum', False)
+        if "previous_plot_sum_state" not in st.session_state:
+            st.session_state.previous_plot_sum_state = st.session_state.get("plot_sum", False)
 
-        plot_residual = st.checkbox("Plot Residual Peak", False, key="plot_residual")
+        # Update plot_sum via a callback to avoid setting widget state during render
+        def _sync_plot_sum_on_residual():
+            if st.session_state.get("plot_residual", False):
+                st.session_state["previous_plot_sum_state"] = False
+                st.session_state["plot_sum"] = True
+            else:
+                if (
+                        st.session_state.get("plot_sum", False)
+                        and st.session_state.get("previous_plot_sum_state") is False
+                ):
+                    st.session_state["plot_sum"] = False
+
+        plot_residual = st.checkbox(
+            "Plot Residual Peak",
+            False,
+            key="plot_residual",
+            on_change=_sync_plot_sum_on_residual,
+        )
         residual_color = st.color_picker("Residual Peak Color", value="#888888", key="residual_color")
-
-        # Automatic toggle logic for sum of Gaussians
-        if plot_residual:
-            # If residual is enabled, automatically enable sum of Gaussians
-            if not st.session_state.get('plot_sum', False):
-                st.session_state.previous_plot_sum_state = False
-                st.session_state.plot_sum = True
-                st.rerun()  # Rerun to update the UI
-        else:
-            # If residual is disabled, restore previous sum state
-            if st.session_state.get('plot_sum', False) and st.session_state.previous_plot_sum_state is False:
-                st.session_state.plot_sum = False
-                st.rerun()  # Rerun to update the UI
 
         if plot_residual:
             st.info("✓ Sum of Gaussians is automatically enabled when plotting residuals")
