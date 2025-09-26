@@ -272,6 +272,15 @@ def setup_sidebar_ui():
         st.session_state.toggle_state = new_toggle_state
         st.session_state.plot_x_axis = new_toggle_state
 
+        # Update x_label when toggle changes - use session state callback
+        if new_toggle_state == "MW":
+            st.session_state.x_label = "Molecular weight (g/mol)"
+        else:
+            st.session_state.x_label = "Retention Time (min)"
+
+        # Force a rerun to update the UI
+        st.rerun()
+
     if st.session_state.plot_x_axis == "MW" and cal_file is None and data_source == "Upload My Own Data":
         st.warning("Calibration file required for molecular weight plotting")
 
@@ -386,13 +395,21 @@ def setup_sidebar_ui():
         fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5, key="fig_width")
         fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5, key="fig_height")
 
-        # FIX: Set default x-label based on x-axis type
+        # FIX: Dynamically set default x-label based on current x-axis type
         if st.session_state.plot_x_axis == "MW":
             x_label_default = "Molecular weight (g/mol)"
         else:
             x_label_default = "Retention Time (min)"
 
-        x_label = st.text_input("X-Axis Label", x_label_default, key="x_label")
+        # Use the current value if it exists, otherwise use the appropriate default
+        current_x_label = st.session_state.get('x_label', x_label_default)
+
+        # Check if we need to update the default due to axis change
+        if (st.session_state.plot_x_axis == "MW" and current_x_label == "Retention Time (min)") or \
+                (st.session_state.plot_x_axis == "RT" and current_x_label == "Molecular weight (g/mol)"):
+            current_x_label = x_label_default
+
+        x_label = st.text_input("X-Axis Label", value=current_x_label, key="x_label")
 
         x_label_style = st.selectbox("X-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0,
                                      key="x_label_style")
@@ -439,7 +456,7 @@ def setup_sidebar_ui():
         'font_size': font_size,
         'fig_width': fig_width,
         'fig_height': fig_height,
-        'x_label': x_label,
+        'x_label': x_label,  # Use the widget value directly
         'y_label': y_label,
         'x_label_style': x_label_style,
         'y_label_style': y_label_style,
