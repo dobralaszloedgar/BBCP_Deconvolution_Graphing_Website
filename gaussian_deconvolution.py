@@ -374,8 +374,8 @@ def setup_sidebar_ui():
     # Residual Peak Settings
     with st.expander("Residual Peak Settings", expanded=True):
         # Store previous sum state before changing it
-        if 'previous_plot_sum_state' not in st.session_state:
-            st.session_state.previous_plot_sum_state = st.session_state.get('plot_sum', False)
+        #if 'previous_plot_sum_state' not in st.session_state:
+            #st.session_state.previous_plot_sum_state = st.session_state.get('plot_sum', False)
 
         plot_residual = st.checkbox("Plot Residual Peak", False, key="plot_residual")
         residual_color = st.color_picker("Residual Peak Color", value="#888888", key="residual_color")
