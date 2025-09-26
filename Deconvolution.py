@@ -194,9 +194,9 @@ def calculate_molecular_weight_averages(x_mw, y_signal, peak_ranges):
 def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, peak_colors, peak_enabled,
                 original_data_label, original_data_color, plot_sum, x_axis_type, x_lim, y_lim,
                 font_family, font_size, fig_size, x_label, y_label, x_label_style,
-                y_label_style, legend_style, integration_ranges=None):
+                y_label_style, legend_style, integration_ranges=None, plot_residual=False, residual_color='#888888'):
     """
-    Create final figure with optional shaded integration ranges.
+    Create final figure with optional shaded integration ranges and residual peak.
     """
     fig, ax = plt.subplots(figsize=fig_size)
 
@@ -204,6 +204,7 @@ def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, pea
     ax.plot(x_plot, y_corrected, label=original_data_label, linewidth=2, color=original_data_color, zorder=2)
 
     # Fitted peaks - only plot enabled peaks
+    sum_gaussians = None
     if best_fit is not None and len(best_fit) > 0:
         enabled_fits = []
         for i, (fit, _) in enumerate(zip(best_fit, area_percentages)):
@@ -214,6 +215,11 @@ def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, pea
         if plot_sum and enabled_fits:
             sum_gaussians = np.sum(enabled_fits, axis=0)
             ax.plot(x_plot, sum_gaussians, '--', color='black', linewidth=1.5, label='Sum of Gaussians', zorder=2)
+
+        # Plot residual if enabled and we have sum of gaussians
+        if plot_residual and sum_gaussians is not None:
+            residual = y_corrected - sum_gaussians
+            ax.plot(x_plot, residual, color=residual_color, linestyle=':', linewidth=1.5, label='Residual', zorder=2)
 
     # Shade integration ranges only under the original curve and only within visible x-limits
     if integration_ranges:
@@ -319,7 +325,9 @@ def run_deconvolution(
         x_label_style="normal",
         y_label_style="normal",
         legend_style="normal",
-        integration_ranges=None
+        integration_ranges=None,
+        plot_residual=False,
+        residual_color='#888888'
 ):
     """
     Orchestrate: prepare data, baseline-correct, fit Gaussians, compute areas, and return figure + tables.
@@ -390,9 +398,12 @@ def run_deconvolution(
     gaussian_results_df = pd.DataFrame(columns=['Peak', 'Value', 'Gaussian Area %'])
     integration_results_df = pd.DataFrame(columns=['Peak', 'Integration Area', 'Integration Area %'])
     mw_results_df = pd.DataFrame(columns=['Peak', 'Mn (g/mol)', 'Mw (g/mol)', 'Đ'])
+    residual_results_df = pd.DataFrame(columns=['Component', 'Area', 'Area %'])
 
     area_percentages = []
     peak_values = []
+    residual_area = 0.0
+    total_area = 0.0
 
     if best_fit is not None and len(best_fit_params) > 0:
         mus = [params[1] for params in best_fit_params]
@@ -407,6 +418,28 @@ def run_deconvolution(
         area_integrals = [trapezoid(gauss, x_rt) for gauss in best_fit]
         total_area = sum(area_integrals) if len(area_integrals) else 0.0
         area_percentages = [(a / total_area) * 100 if total_area > 0 else 0.0 for a in area_integrals]
+
+        # Calculate residual area if enabled
+        if plot_residual:
+            # Calculate sum of enabled gaussians
+            sum_gaussians = np.zeros_like(x_rt)
+            for i, (fit, enabled) in enumerate(zip(best_fit, peak_enabled)):
+                if i < len(peak_enabled) and enabled:
+                    sum_gaussians += fit
+
+            # Calculate residual (only positive values)
+            residual = np.maximum(y_corrected - sum_gaussians, 0)
+            residual_area = trapezoid(residual, x_rt)
+
+            # Update total area to include residual
+            total_area_with_residual = total_area + residual_area
+
+            # Recalculate percentages with residual included
+            if total_area_with_residual > 0:
+                area_percentages = [(a / total_area_with_residual) * 100 for a in area_integrals]
+                residual_percentage = (residual_area / total_area_with_residual) * 100
+            else:
+                residual_percentage = 0.0
 
         # Sort descending by value
         sorted_indices = np.argsort(peak_values)[::-1]
@@ -432,6 +465,24 @@ def run_deconvolution(
             else:
                 rows.append({'Peak': name, value_column: f"{value:.2f}", 'Gaussian Area %': f"{pct:.1f}"})
         gaussian_results_df = pd.DataFrame(rows)
+
+        # Create residual results table
+        if plot_residual:
+            residual_rows = []
+            # Add gaussian peaks
+            for name, pct in zip(peak_names, area_percentages):
+                residual_rows.append({
+                    'Component': name,
+                    'Area': f"{pct * total_area_with_residual / 100:.4f}" if total_area_with_residual > 0 else "0.0000",
+                    'Area %': f"{pct:.1f}"
+                })
+            # Add residual
+            residual_rows.append({
+                'Component': 'Residual',
+                'Area': f"{residual_area:.4f}",
+                'Area %': f"{residual_percentage:.1f}"
+            })
+            residual_results_df = pd.DataFrame(residual_rows)
 
     # Integration areas over visible RT range only; y clamped to >= 0; x_rt sorted ascending
     if integration_ranges:
@@ -493,7 +544,7 @@ def run_deconvolution(
         x_plot, y_corrected, best_fit, area_percentages, peak_names, peak_colors, peak_enabled,
         original_data_label, original_data_color, plot_sum, x_axis_type, x_lim, y_lim,
         font_family, font_size, fig_size, x_label, y_label, x_label_style,
-        y_label_style, legend_style, integration_ranges
+        y_label_style, legend_style, integration_ranges, plot_residual, residual_color
     )
 
-    return fig, gaussian_results_df, integration_results_df, mw_results_df, x_plot, y_corrected, calibration_func
+    return fig, gaussian_results_df, integration_results_df, mw_results_df, residual_results_df, x_plot, y_corrected, calibration_func

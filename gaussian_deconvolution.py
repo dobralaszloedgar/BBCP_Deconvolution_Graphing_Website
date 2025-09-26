@@ -372,6 +372,10 @@ def setup_sidebar_ui():
 
         plot_sum = st.checkbox("Plot Sum Of Gaussians", False, key="plot_sum")
 
+        # Residual peak settings
+        plot_residual = st.checkbox("Plot Residual Peak", False, key="plot_residual")
+        residual_color = st.color_picker("Residual Peak Color", value="#888888", key="residual_color")
+
     # Peak Integration
     with st.expander("Peak Integration", expanded=False):
         # Disable integration in RT mode
@@ -465,6 +469,8 @@ def setup_sidebar_ui():
         'peaks_txt': peaks_txt,
         'peaks_are_mw': peaks_are_mw,
         'plot_sum': plot_sum,
+        'plot_residual': plot_residual,
+        'residual_color': residual_color,
         'custom_names': custom_names,
         'custom_colors': custom_colors,
         'peak_enabled': peak_enabled,
@@ -502,6 +508,8 @@ def main():
         st.session_state.integration_table = None
     if 'mw_table' not in st.session_state:
         st.session_state.mw_table = None
+    if 'residual_table' not in st.session_state:
+        st.session_state.residual_table = None
     if 'graph_placeholder' not in st.session_state:
         st.session_state.graph_placeholder = None
     if 'table_placeholder' not in st.session_state:
@@ -572,6 +580,7 @@ def main():
         st.session_state.gaussian_table = None
         st.session_state.integration_table = None
         st.session_state.mw_table = None
+        st.session_state.residual_table = None
         st.session_state.x_plot_data = None
         st.session_state.y_corrected_data = None
         st.session_state.peak_integration_ranges = {}
@@ -634,7 +643,7 @@ def main():
                 integration_ranges = st.session_state.peak_integration_ranges if params_dict[
                     'integration_enabled'] else None
 
-                fig, gaussian_results_df, integration_results_df, mw_results_df, x_plot, y_corrected, calibration_func = run_deconvolution(
+                fig, gaussian_results_df, integration_results_df, mw_results_df, residual_results_df, x_plot, y_corrected, calibration_func = run_deconvolution(
                     data_array=data, calib_array=calib, x_axis_type=st.session_state.plot_x_axis, x_lim=x_lim,
                     y_lim=[params_dict['y_low'], params_dict['y_high']], n_peaks=params_dict['peaks_n'],
                     plot_sum=params_dict['plot_sum'], manual_peaks=manual_peaks,
@@ -648,10 +657,12 @@ def main():
                     font_size=params_dict['font_size'], fig_size=(params_dict['fig_width'], params_dict['fig_height']),
                     x_label=params_dict['x_label'], y_label=params_dict['y_label'],
                     x_label_style=params_dict['x_label_style'], y_label_style=params_dict['y_label_style'],
-                    legend_style=params_dict['legend_style'], integration_ranges=integration_ranges)
+                    legend_style=params_dict['legend_style'], integration_ranges=integration_ranges,
+                    plot_residual=params_dict['plot_residual'], residual_color=params_dict['residual_color'])
 
                 st.session_state.last_fig, st.session_state.gaussian_table = fig, gaussian_results_df
                 st.session_state.integration_table, st.session_state.mw_table = integration_results_df, mw_results_df
+                st.session_state.residual_table = residual_results_df
                 st.session_state.x_plot_data, st.session_state.y_corrected_data = x_plot, y_corrected
 
             except Exception as e:
@@ -674,7 +685,8 @@ def main():
 
         with st.session_state.table_placeholder.container():
             if st.session_state.gaussian_table is not None and not st.session_state.gaussian_table.empty:
-                tab1, tab2, tab3 = st.tabs(["Gaussian Results", "Integration Results", "Molecular Weight Results"])
+                tab1, tab2, tab3, tab4 = st.tabs(
+                    ["Gaussian Results", "Integration Results", "Molecular Weight Results", "Residual Results"])
                 with tab1:
                     st.dataframe(st.session_state.gaussian_table, use_container_width=True)
                 with tab2:
@@ -691,6 +703,13 @@ def main():
                         st.dataframe(st.session_state.mw_table, use_container_width=True)
                     else:
                         st.info("Molecular weight results are available in MW mode with integration enabled.")
+                with tab4:
+                    if (st.session_state.residual_table is not None and
+                            not st.session_state.residual_table.empty and
+                            params_dict['plot_residual']):
+                        st.dataframe(st.session_state.residual_table, use_container_width=True)
+                    else:
+                        st.info("Enable residual peak plotting to see residual results.")
 
 
 if __name__ == "__main__":
