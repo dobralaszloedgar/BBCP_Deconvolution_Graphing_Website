@@ -338,7 +338,7 @@ def setup_sidebar_ui():
                 baseline_ranges_inputs.append(range_input)
 
     # Peak Colors And Names
-    with st.expander("Peak Selection and Appearance", expanded=False):
+    with st.expander("Peak Appearance", expanded=False):
         default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5",
                          "Peak 6", "Peak 7", "Peak 8", "Peak 9", "Peak 10"]
         default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c', '#a83232',
