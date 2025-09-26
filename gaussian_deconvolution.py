@@ -372,7 +372,7 @@ def setup_sidebar_ui():
         plot_sum = st.checkbox("Plot Sum Of Gaussians", False, key="plot_sum")
 
     # Residual Peak Settings
-    with st.expander("Residual Peak Settings", expanded=True):
+    with st.expander("Residual Peak Settings", expanded=False):
         # Store previous sum state before changing it
         if "previous_plot_sum_state" not in st.session_state:
             st.session_state.previous_plot_sum_state = st.session_state.get("plot_sum", False)
