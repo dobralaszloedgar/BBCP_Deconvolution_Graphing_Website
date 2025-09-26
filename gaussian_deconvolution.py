@@ -334,7 +334,6 @@ def setup_sidebar_ui():
 
     # Peak Colors And Names
     with st.expander("Peak Colors And Names", expanded=False):
-        st.write("Peak Names And Colors:")
         default_names = ["Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5",
                          "Peak 6", "Peak 7", "Peak 8", "Peak 9", "Peak 10"]
         default_colors = ['#FFbf00', '#06d6a0', '#118ab2', '#073b4c', '#a83232',
@@ -373,7 +372,7 @@ def setup_sidebar_ui():
         plot_sum = st.checkbox("Plot Sum Of Gaussians", False, key="plot_sum")
 
     # Residual Peak Settings
-    with st.expander("Residual Peak Settings", expanded=False):
+    with st.expander("Residual Peak Settings", expanded=True):
         # Store previous sum state before changing it
         if 'previous_plot_sum_state' not in st.session_state:
             st.session_state.previous_plot_sum_state = st.session_state.get('plot_sum', False)
