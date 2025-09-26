@@ -386,10 +386,13 @@ def setup_sidebar_ui():
         fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5, key="fig_width")
         fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5, key="fig_height")
 
+        # FIX: Set default x-label based on x-axis type
         if st.session_state.plot_x_axis == "MW":
-            x_label = st.text_input("X-Axis Label", "Molecular weight (g/mol)", key="x_label")
+            x_label_default = "Molecular weight (g/mol)"
         else:
-            x_label = st.text_input("X-Axis Label", "Retention Time (min)", key="x_label")
+            x_label_default = "Retention Time (min)"
+
+        x_label = st.text_input("X-Axis Label", x_label_default, key="x_label")
 
         x_label_style = st.selectbox("X-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0,
                                      key="x_label_style")
@@ -468,6 +471,9 @@ def main():
     if 'last_integration_ranges' not in st.session_state: st.session_state.last_integration_ranges = {}
     if 'x_plot_data' not in st.session_state: st.session_state.x_plot_data = None
     if 'y_corrected_data' not in st.session_state: st.session_state.y_corrected_data = None
+    if 'last_data_file' not in st.session_state: st.session_state.last_data_file = None
+    if 'last_cal_file' not in st.session_state: st.session_state.last_cal_file = None
+    if 'last_data_source' not in st.session_state: st.session_state.last_data_source = None
 
     # Main content area - only graph and table
     st.title("Gaussian Deconvolution")
@@ -479,6 +485,39 @@ def main():
     # SIDEBAR - All settings and parameters
     with st.sidebar:
         params_dict, data_file, cal_file = setup_sidebar_ui()
+
+    # NEW: Check if data files have changed and clear previous results
+    current_data_source = params_dict['data_source']
+    current_data_file_name = data_file.name if data_file else None
+    current_cal_file_name = cal_file.name if cal_file else None
+
+    # Check if data source or files have changed
+    data_changed = (
+            current_data_source != st.session_state.last_data_source or
+            current_data_file_name != st.session_state.last_data_file or
+            current_cal_file_name != st.session_state.last_cal_file
+    )
+
+    if data_changed and current_data_source == "Upload My Own Data":
+        # Clear all previous results when new data is uploaded
+        st.session_state.last_fig = None
+        st.session_state.gaussian_table = None
+        st.session_state.integration_table = None
+        st.session_state.mw_table = None
+        st.session_state.x_plot_data = None
+        st.session_state.y_corrected_data = None
+        st.session_state.peak_integration_ranges = {}
+
+        # Clear the placeholders
+        if st.session_state.graph_placeholder is not None:
+            st.session_state.graph_placeholder.empty()
+        if st.session_state.table_placeholder is not None:
+            st.session_state.table_placeholder.empty()
+
+        # Update the last file references
+        st.session_state.last_data_source = current_data_source
+        st.session_state.last_data_file = current_data_file_name
+        st.session_state.last_cal_file = current_cal_file_name
 
     # MAIN CONTENT AREA - Only graph and table
     # Create placeholders for graph and table if they don't exist
