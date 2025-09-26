@@ -400,7 +400,7 @@ def setup_sidebar_ui():
             key="plot_residual",
             on_change=_sync_plot_sum_on_residual,
         )
-        residual_color = st.color_picker("Residuals Color", value="#888888", key="residual_color")
+        residual_color = st.color_picker("Residuals Color", value="#7B3413", key="residual_color")
 
         if plot_residual:
             st.info("✓ Sum of Gaussians is automatically enabled when plotting residuals")
