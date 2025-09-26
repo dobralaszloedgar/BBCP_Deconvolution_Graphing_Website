@@ -272,6 +272,10 @@ def setup_sidebar_ui():
         st.session_state.toggle_state = new_toggle_state
         st.session_state.plot_x_axis = new_toggle_state
 
+        # Disable integration when switching to RT mode
+        if new_toggle_state == "RT":
+            st.session_state.integration_enabled = False
+
         # Update x_label when toggle changes - use session state callback
         if new_toggle_state == "MW":
             st.session_state.x_label = "Molecular weight (g/mol)"
@@ -370,16 +374,33 @@ def setup_sidebar_ui():
 
     # Peak Integration
     with st.expander("Peak Integration", expanded=False):
-        integration_enabled = st.checkbox(
-            "Enable Peak Integration",
-            value=st.session_state.get('integration_enabled', False),
-            key="integration_enabled_checkbox"
-        )
-        st.session_state.integration_enabled = integration_enabled
+        # Disable integration in RT mode
+        if st.session_state.plot_x_axis == "RT":
+            st.session_state.integration_enabled = False
+            integration_enabled = st.checkbox(
+                "Enable Peak Integration",
+                value=False,
+                key="integration_enabled_checkbox",
+                disabled=True,  # Disable the checkbox in RT mode
+                help="Peak integration is only available in Molecular Weight mode"
+            )
+            st.info("⚠️ Peak integration is only available in Molecular Weight mode")
+        else:
+            integration_enabled = st.checkbox(
+                "Enable Peak Integration",
+                value=st.session_state.get('integration_enabled', False),
+                key="integration_enabled_checkbox"
+            )
+            st.session_state.integration_enabled = integration_enabled
 
         # Call the integration ranges UI directly inside this expander
-        if integration_enabled:
+        if integration_enabled and st.session_state.plot_x_axis == "MW":
             _setup_integration_sidebar_ui()
+        elif st.session_state.plot_x_axis == "RT":
+            # Clear integration data when in RT mode
+            st.session_state.integration_table = None
+            st.session_state.mw_table = None
+            st.session_state.peak_integration_ranges = {}
 
     # Appearance Settings
     with st.expander("Appearance Settings", expanded=False):
