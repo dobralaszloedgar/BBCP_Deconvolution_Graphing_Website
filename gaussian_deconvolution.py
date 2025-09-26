@@ -376,9 +376,11 @@ def setup_sidebar_ui():
             key="integration_enabled_checkbox"
         )
         st.session_state.integration_enabled = integration_enabled
+        _setup_integration_sidebar_ui()
+
 
     # Call the new function to render integration controls if enabled
-    _setup_integration_sidebar_ui()
+    #_setup_integration_sidebar_ui()
 
     # Appearance Settings
     with st.expander("Appearance Settings", expanded=False):
