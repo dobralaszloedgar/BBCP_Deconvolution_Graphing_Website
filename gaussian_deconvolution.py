@@ -272,6 +272,12 @@ def setup_sidebar_ui():
         st.session_state.toggle_state = new_toggle_state
         st.session_state.plot_x_axis = new_toggle_state
 
+        # NEW: Update x_label when toggle changes
+        if new_toggle_state == "MW":
+            st.session_state.x_label = "Molecular weight (g/mol)"
+        else:
+            st.session_state.x_label = "Retention Time (min)"
+
     if st.session_state.plot_x_axis == "MW" and cal_file is None and data_source == "Upload My Own Data":
         st.warning("Calibration file required for molecular weight plotting")
 
@@ -386,13 +392,22 @@ def setup_sidebar_ui():
         fig_width = st.number_input("Figure Width (inches)", 5.0, 15.0, 8.0, step=0.5, key="fig_width")
         fig_height = st.number_input("Figure Height (inches)", 4.0, 10.0, 5.0, step=0.5, key="fig_height")
 
-        # FIX: Set default x-label based on x-axis type
+        # FIX: Dynamically set default x-label based on current x-axis type
         if st.session_state.plot_x_axis == "MW":
             x_label_default = "Molecular weight (g/mol)"
         else:
             x_label_default = "Retention Time (min)"
 
-        x_label = st.text_input("X-Axis Label", x_label_default, key="x_label")
+        # Use the current value if it exists, otherwise use the appropriate default
+        current_x_label = st.session_state.get('x_label', x_label_default)
+
+        # Check if we need to update the default due to axis change
+        if (st.session_state.plot_x_axis == "MW" and current_x_label == "Retention Time (min)") or \
+                (st.session_state.plot_x_axis == "RT" and current_x_label == "Molecular weight (g/mol)"):
+            current_x_label = x_label_default
+
+        x_label = st.text_input("X-Axis Label", value=current_x_label, key="x_label")
+        st.session_state.x_label = x_label  # Store the current value
 
         x_label_style = st.selectbox("X-Axis Label Style", ["normal", "italic", "bold", "bold italic"], index=0,
                                      key="x_label_style")
@@ -474,6 +489,13 @@ def main():
     if 'last_data_file' not in st.session_state: st.session_state.last_data_file = None
     if 'last_cal_file' not in st.session_state: st.session_state.last_cal_file = None
     if 'last_data_source' not in st.session_state: st.session_state.last_data_source = None
+
+    # NEW: Initialize x_label based on current plot_x_axis
+    if 'x_label' not in st.session_state:
+        if st.session_state.plot_x_axis == "MW":
+            st.session_state.x_label = "Molecular weight (g/mol)"
+        else:
+            st.session_state.x_label = "Retention Time (min)"
 
     # Main content area - only graph and table
     st.title("Gaussian Deconvolution")
