@@ -575,6 +575,8 @@ def main():
     # Main content area - only graph and table
     st.title("Gaussian Deconvolution")
 
+    if st.button("Help"):
+        st.text_area("Displayed Text", "This is the text that appears when the button is clicked.", height=100)
 
 
     # SIDEBAR - All settings and parameters
