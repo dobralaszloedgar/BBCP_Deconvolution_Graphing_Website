@@ -568,12 +568,14 @@ def main():
     if 'previous_plot_sum_state' not in st.session_state:
         st.session_state.previous_plot_sum_state = False
 
-    # Main content area - only graph and table
-    st.title("Gaussian Deconvolution")
-
     # Back to launcher button at top
     if st.button("← Back to Launcher"):
         _clear_query_params_and_rerun()
+
+    # Main content area - only graph and table
+    st.title("Gaussian Deconvolution")
+
+
 
     # SIDEBAR - All settings and parameters
     with st.sidebar:
