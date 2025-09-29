@@ -576,7 +576,7 @@ def main():
         _clear_query_params_and_rerun()
 
     # Main content area - only graph and table
-    st.title("Gaussian Deconvolution")
+    st.title("Gaussian Deconvolution", help="jask")
 
 
     # SIDEBAR - All settings and parameters
