@@ -576,8 +576,9 @@ def main():
         _clear_query_params_and_rerun()
 
     # Main content area - only graph and table
-    st.title("Gaussian Deconvolution", help="jask")
-
+    st.title("Gaussian Deconvolution")
+    st.markdown(
+        "This application demonstrates how to easily create interactive web tools using Streamlit. Explore the features below!")
 
     # SIDEBAR - All settings and parameters
     with st.sidebar:
