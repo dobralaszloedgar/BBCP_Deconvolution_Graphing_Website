@@ -1,4 +1,3 @@
-
 import os
 import numpy as np
 import pandas as pd
@@ -107,9 +106,30 @@ def detect_peaks(x_rt, y_corrected, n_peaks, manual_peaks=[], peaks_are_mw=True,
                 rt = calibration_func['mw_to_rt'](peak)
             else:
                 rt = peak
+
+            # Find the closest point to the manual peak position
             idx = np.argmin(np.abs(x_rt - rt))
-            x_peaks_rt.append(x_rt[idx])
-            y_peaks.append(y_corrected[idx])
+
+            # Search for the actual peak in a window around the manual position
+            search_window = 100  # points to search around the manual peak
+            start_idx = max(0, idx - search_window)
+            end_idx = min(len(x_rt), idx + search_window)
+
+            # Find local maxima in the search window
+            local_indices, _ = find_peaks(y_corrected[start_idx:end_idx], distance=50, width=20)
+
+            if len(local_indices) > 0:
+                # Use the highest peak in the search window
+                local_indices += start_idx  # adjust indices to full array
+                local_heights = y_corrected[local_indices]
+                best_local_idx = local_indices[np.argmax(local_heights)]
+                x_peaks_rt.append(x_rt[best_local_idx])
+                y_peaks.append(y_corrected[best_local_idx])
+            else:
+                # Fall back to the closest point if no clear peak found
+                x_peaks_rt.append(x_rt[idx])
+                y_peaks.append(y_corrected[idx])
+
         n_peaks_found = len(manual_peaks) if len(manual_peaks) < n_peaks else n_peaks
 
     return np.array(x_peaks_rt), np.array(y_peaks), n_peaks_found
@@ -201,6 +221,10 @@ def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, pea
     """
     fig, ax = plt.subplots(figsize=fig_size)
 
+    # Set font properties globally first
+    plt.rcParams['font.family'] = font_family
+    plt.rcParams['font.size'] = font_size
+
     # Original data
     ax.plot(x_plot, y_corrected, label=original_data_label, linewidth=2, color=original_data_color, zorder=2)
 
@@ -254,18 +278,24 @@ def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, pea
     ax.set_xlim(x_lim)
     ax.set_ylim(y_lim)
 
-    # Fonts with fallback
+    # Fonts with fallback - using matplotlib's font system directly
     try:
+        # Get available fonts
         available_fonts = [f.name for f in fm.fontManager.ttflist]
+
+        # Check if requested font is available, otherwise use fallback
         if font_family not in available_fonts:
-            fallback_fonts = ["Times New Roman", "DejaVu Serif", "Liberation Serif", "Arial", "Helvetica", "sans-serif"]
+            fallback_fonts = ["DejaVu Sans", "Arial", "Helvetica", "Verdana", "sans-serif"]
             for fallback in fallback_fonts:
                 if fallback in available_fonts:
                     font_family = fallback
+                    plt.rcParams['font.family'] = font_family
                     break
             else:
                 font_family = available_fonts[0] if available_fonts else "sans-serif"
+                plt.rcParams['font.family'] = font_family
 
+        # Set label styles using font properties
         font_prop_x = fm.FontProperties(
             family=font_family,
             size=font_size,
@@ -284,15 +314,25 @@ def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, pea
             style='italic' if 'italic' in legend_style else 'normal',
             weight='bold' if 'bold' in legend_style else 'normal',
         )
+
         ax.set_xlabel(x_label, fontproperties=font_prop_x)
         ax.set_ylabel(y_label, fontproperties=font_prop_y)
-        for item in (ax.get_xticklabels() + ax.get_yticklabels()):
-            item.set_fontproperties(fm.FontProperties(family=font_family, size=font_size))
+
+        # Set tick labels with the same font family
+        for label in ax.get_xticklabels():
+            label.set_fontfamily(font_family)
+            label.set_fontsize(font_size)
+        for label in ax.get_yticklabels():
+            label.set_fontfamily(font_family)
+            label.set_fontsize(font_size)
+
         ax.legend(prop=font_prop_legend)
+
     except Exception as e:
         st.warning(f"Could not set custom font: {str(e)}")
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
+        # Fallback to basic font settings
+        ax.set_xlabel(x_label, fontfamily=font_family, fontsize=font_size)
+        ax.set_ylabel(y_label, fontfamily=font_family, fontsize=font_size)
         ax.legend()
 
     ax.grid(False)
@@ -336,6 +376,10 @@ def run_deconvolution(
     """
     plt.rcdefaults()
 
+    # Set global font parameters at the start
+    plt.rcParams['font.family'] = font_family
+    plt.rcParams['font.size'] = font_size
+
     # Raw arrays
     x_raw = data_array[:, 0].astype(float)
     y_raw = data_array[:, 1].astype(float)
@@ -372,8 +416,8 @@ def run_deconvolution(
                 # Equation: log10(MW) = a*RT^2 + b*RT + c
                 a, b, c = coeffs
                 calibration_func = {
-                    'mw_to_rt': lambda mw: np.real((-b + np.sqrt(b**2 - 4*a*(c - np.log10(mw)))) / (2*a)),
-                    'rt_to_mw': lambda rt: 10 ** (a * rt**2 + b * rt + c),
+                    'mw_to_rt': lambda mw: np.real((-b + np.sqrt(b ** 2 - 4 * a * (c - np.log10(mw)))) / (2 * a)),
+                    'rt_to_mw': lambda rt: 10 ** (a * rt ** 2 + b * rt + c),
                 }
 
         # Convert MW x-limits to RT limits (higher MW -> lower RT)
