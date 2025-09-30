@@ -1,5 +1,4 @@
 import streamlit as st
-from altair.vegalite.v5.theme import theme
 
 # Page config
 st.set_page_config(
@@ -183,7 +182,7 @@ def main():
     selected_app = _get_selected_app()
 
     if selected_app == "gaussian_deconvolution":
-        from gaussian_deconvolution import main as gaussian_main
+        from apps.pages.gaussian_deconvolution import main as gaussian_main
         gaussian_main()
         return
 

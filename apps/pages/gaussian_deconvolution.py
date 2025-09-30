@@ -1,4 +1,4 @@
-from Deconvolution import run_deconvolution
+from src.Deconvolution import run_deconvolution
 import streamlit as st
 import numpy as np
 import requests
