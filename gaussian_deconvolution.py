@@ -252,14 +252,14 @@ def setup_sidebar_ui():
         else:
             st.stop()
     else:
-        data_file = st.file_uploader("Chromatogram Data (.txt)", type="txt", key="data_uploader")
+        data_file = st.file_uploader("Chromatogram Data", type=["txt", "csv"], key="data_uploader", help="Upload a tab‑delimited text file (.txt or .csv). First 2 rows are generally used for title and headers, so they will be removed. Put Retention Time in column 1 and Intensity in column 2. Start your data on row 3.")
         if st.session_state.plot_x_axis == "MW":
             # Calibration source selection
             cal_source = st.radio("Calibration Source:", ["Upload Calibration File", "Enter Calibration Equation"],
                                   key="cal_source")
 
             if cal_source == "Upload Calibration File":
-                cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt", key="cal_uploader")
+                cal_file = st.file_uploader("Calibration Curve", type=["txt", "csv"], key="cal_uploader", help="Upload a tab‑delimited calibration text file (.txt or .csv). Should look the same as the data-file (same number of rows/columns), but only with calibration curve data. First 2 rows are generally used for title and headers, so they will be removed. Put Retention Time in column 1 and Intensity in column 2. Start your data on row 3.")
             else:
                 # Calibration equation input
                 st.subheader("Calibration Equation")
