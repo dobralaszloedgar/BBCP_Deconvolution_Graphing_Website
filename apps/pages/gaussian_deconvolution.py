@@ -611,7 +611,7 @@ def main():
     if st.button("← Back to Launcher"):
         _clear_query_params_and_rerun()
 
-    st.link_button("Help", f"https://github.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/blob/b0737a7566f7346ead3c4e68ea938ff175aa607c/README.md")
+    st.link_button("Help", f"https://github.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/blob/bd45a9e141d81665d519a5fc374ac240d4b0fe0a/README.md")
 
     # Main content area - only graph and table
     st.title("Gaussian Deconvolution")
