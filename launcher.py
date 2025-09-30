@@ -182,7 +182,7 @@ def main():
     selected_app = _get_selected_app()
 
     if selected_app == "gaussian_deconvolution":
-        from apps.pages.gaussian_deconvolution import main as gaussian_main
+        from pages.gaussian_deconvolution import main as gaussian_main
         gaussian_main()
         return
 

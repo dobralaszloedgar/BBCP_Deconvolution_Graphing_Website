@@ -259,14 +259,16 @@ def setup_sidebar_ui():
         else:
             st.stop()
     else:
-        data_file = st.file_uploader("Chromatogram Data", type=["txt", "csv"], key="data_uploader", help="Upload a tab‑delimited text file (.txt or .csv).  \n First 2 rows are generally used for title and headers, so they will be removed.  \nPut Retention Time in column 1 and Intensity in column 2. Start your data on row 3.")
+        data_file = st.file_uploader("Chromatogram Data", type=["txt", "csv"], key="data_uploader",
+                                     help="Upload a tab‑delimited text file (.txt or .csv).  \n First 2 rows are generally used for title and headers, so they will be removed.  \nPut Retention Time in column 1 and Intensity in column 2. Start your data on row 3.")
         if st.session_state.plot_x_axis == "MW":
             # Calibration source selection
             cal_source = st.radio("Calibration Source:", ["Upload Calibration File", "Enter Calibration Equation"],
                                   key="cal_source")
 
             if cal_source == "Upload Calibration File":
-                cal_file = st.file_uploader("Calibration Curve", type=["txt", "csv"], key="cal_uploader", help="Upload a tab‑delimited calibration text file (.txt or .csv).  \nShould look the same as the data-file (same number of rows/columns), but only with calibration curve data. First 2 rows are generally used for title and headers, so they will be removed.  \nPut Retention Time in column 1 and Intensity in column 2. Start your data on row 3.")
+                cal_file = st.file_uploader("Calibration Curve", type=["txt", "csv"], key="cal_uploader",
+                                            help="Upload a tab‑delimited calibration text file (.txt or .csv).  \nShould look the same as the data-file (same number of rows/columns), but only with calibration curve data. First 2 rows are generally used for title and headers, so they will be removed.  \nPut Retention Time in column 1 and Intensity in column 2. Start your data on row 3.")
             else:
                 # Calibration equation input
                 st.subheader("Calibration Equation")
@@ -345,10 +347,43 @@ def setup_sidebar_ui():
         y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01, key="y_low")
         y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01, key="y_high")
 
-        # Manual peaks
+        # Manual peaks - NEW IMPROVED INTERFACE
         unit_label = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
-        peaks_txt = st.text_input(f"Manual Peaks (comma list, blank=auto) in {unit_label}", "", key="peaks_txt")
-        peaks_are_mw = st.checkbox(f"Manual Peaks Given As {unit_label}", True, key="peaks_are_mw")
+        st.subheader("Manual Peak Entry")
+        use_manual_peaks = st.checkbox("Use Manual Peak Positions", False, key="use_manual_peaks",
+                                       help="Manually specify peak positions instead of automatic detection")
+
+        manual_peaks = []
+        if use_manual_peaks:
+            st.write(f"Enter peak positions in {unit_label}:")
+            # Create number inputs for each peak based on the number of peaks selected
+            for i in range(peaks_n):
+                if st.session_state.plot_x_axis == "MW":
+                    # MW mode - use scientific notation and larger steps
+                    peak_val = st.number_input(
+                        f"Peak {i + 1} Position ({unit_label})",
+                        min_value=1e2,
+                        max_value=1e10,
+                        value=1e5 * (10 ** i) if i < 4 else 1e6,
+                        step=1000.0,
+                        format="%e",
+                        key=f"manual_peak_{i}"
+                    )
+                else:
+                    # RT mode - use decimal notation and smaller steps
+                    peak_val = st.number_input(
+                        f"Peak {i + 1} Position ({unit_label})",
+                        min_value=0.0,
+                        max_value=100.0,
+                        value=10.0 + i * 1.5 if i < 4 else 15.0,
+                        step=0.1,
+                        format="%.2f",
+                        key=f"manual_peak_{i}"
+                    )
+                manual_peaks.append(peak_val)
+        else:
+            # Clear manual peaks when checkbox is disabled
+            manual_peaks = []
 
     # Baseline Correction
     with st.expander("Baseline Correction", expanded=False):
@@ -534,8 +569,8 @@ def setup_sidebar_ui():
         'w_hi': w_hi,
         'baseline_method': baseline_method,
         'baseline_ranges': baseline_ranges_inputs,
-        'peaks_txt': peaks_txt,
-        'peaks_are_mw': peaks_are_mw,
+        'manual_peaks': manual_peaks,
+        'use_manual_peaks': use_manual_peaks,
         'plot_sum': st.session_state.get('plot_sum', False),
         'plot_residual': plot_residual,
         'residual_color': residual_color,
@@ -606,12 +641,15 @@ def main():
         st.session_state.x_label = "Molecular weight (g/mol)"  # Default value
     if 'previous_plot_sum_state' not in st.session_state:
         st.session_state.previous_plot_sum_state = False
+    if 'use_manual_peaks' not in st.session_state:
+        st.session_state.use_manual_peaks = False
 
     # Back to launcher button at top
     if st.button("← Back to Launcher"):
         _clear_query_params_and_rerun()
 
-    st.link_button("Help", f"https://github.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/blob/bd45a9e141d81665d519a5fc374ac240d4b0fe0a/README.md")
+    st.link_button("Help",
+                   f"https://github.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/blob/bd45a9e141d81665d519a5fc374ac240d4b0fe0a/README.md")
 
     # Main content area - only graph and table
     st.title("Gaussian Deconvolution")
@@ -692,7 +730,7 @@ def main():
 
     should_update = st.session_state.get('update_button', False) or \
                     (params_dict.get('auto_update', True) and (
-                                params_changed or integration_ranges_changed or data_just_loaded))
+                            params_changed or integration_ranges_changed or data_just_loaded))
 
     if should_update:
         # Store current params for comparison next time
@@ -716,7 +754,8 @@ def main():
                 data = load_array(data_file, skip_rows=2)
                 calib = load_array(cal_file, skip_rows=2) if is_mw and cal_file else None
 
-                manual_peaks = [float(p.strip()) for p in params_dict['peaks_txt'].split(",") if p.strip()]
+                # Use manual peaks if enabled, otherwise empty list
+                manual_peaks = params_dict['manual_peaks'] if params_dict['use_manual_peaks'] else []
 
                 x_lim = [params_dict['mw_min'], params_dict['mw_max']] if is_mw else [params_dict['rt_min'],
                                                                                       params_dict['rt_max']]
@@ -734,7 +773,7 @@ def main():
                     n_peaks=params_dict['peaks_n'],
                     plot_sum=params_dict['plot_sum'],
                     manual_peaks=manual_peaks,
-                    peaks_are_mw=params_dict['peaks_are_mw'],
+                    peaks_are_mw=True,  # Manual peaks are always in the current unit (MW or RT)
                     peak_names=params_dict['custom_names'],
                     peak_colors=params_dict['custom_colors'],
                     peak_enabled=params_dict['peak_enabled'],
