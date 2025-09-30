@@ -4,6 +4,7 @@ import numpy as np
 import requests
 import tempfile
 import os
+import pandas as pd
 
 
 def _clear_query_params_and_rerun():
@@ -77,6 +78,12 @@ def download_default_file(url, filename):
     except Exception as e:
         st.error(f"Error downloading default file: {str(e)}")
         return None
+
+
+def load_array(path, skip_rows=2):
+    # Auto-detect delimiter via csv.Sniffer (triggered by sep=None with engine='python')
+    df = pd.read_csv(path, sep=None, engine='python', skiprows=skip_rows)
+    return df.to_numpy(dtype=float)
 
 
 def parse_ranges(inputs, is_mw=True):
@@ -695,8 +702,8 @@ def main():
                 if cal_file and hasattr(cal_file, 'seek'):
                     cal_file.seek(0)
 
-                data = np.loadtxt(data_file, delimiter="\t", skiprows=2)
-                calib = np.loadtxt(cal_file, delimiter="\t", skiprows=2) if is_mw and cal_file else None
+                data = load_array(data_file, skip_rows=2)
+                calib = load_array(cal_file, skip_rows=2) if is_mw and cal_file else None
 
                 manual_peaks = [float(p.strip()) for p in params_dict['peaks_txt'].split(",") if p.strip()]
 
