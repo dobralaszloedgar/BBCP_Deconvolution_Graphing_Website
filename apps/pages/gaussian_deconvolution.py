@@ -247,8 +247,8 @@ def setup_sidebar_ui():
     if data_source == "Use Example Data":
         st.info("Using example data to demonstrate the deconvolution process.")
         with st.spinner("Loading example data..."):
-            DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
-            DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
+            DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/data/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
+            DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/data/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
 
             cal_path = download_default_file(DEFAULT_CAL_URL, "default_cal.txt")
             data_path = download_default_file(DEFAULT_DATA_URL, "default_data.txt")
