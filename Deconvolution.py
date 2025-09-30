@@ -1,3 +1,4 @@
+
 import os
 import numpy as np
 import pandas as pd
@@ -302,6 +303,7 @@ def create_plot(x_plot, y_corrected, best_fit, area_percentages, peak_names, pea
 def run_deconvolution(
         data_array,
         calib_array=None,
+        calib_equation=None,
         x_axis_type="MW",
         x_lim=[1e3, 1e7],
         y_lim=[-0.02, 1.0],
@@ -341,114 +343,136 @@ def run_deconvolution(
     calibration_func = None
 
     if x_axis_type == "MW":
-        if calib_array is None:
-            raise ValueError("Calibration array is required for molecular weight plotting")
+        if calib_array is None and calib_equation is None:
+            raise ValueError("Calibration array or equation is required for molecular weight plotting")
 
-        retention_time_calib = calib_array[:, 0].astype(float)
-        log_mw_calib = calib_array[:, 1].astype(float)
-        f_log_mw = interp1d(retention_time_calib, log_mw_calib, kind='linear', fill_value='extrapolate')
-        f_rt = interp1d(log_mw_calib, retention_time_calib, kind='linear', fill_value='extrapolate')
-        calibration_func = {
-            'mw_to_rt': lambda mw: f_rt(np.log10(mw)),
-            'rt_to_mw': lambda rt: 10 ** f_log_mw(rt),
-        }
-        # Convert MW x-limits to RT limits (higher MW -> lower RT)
-        rt_min = calibration_func['mw_to_rt'](x_lim[1])
-        rt_max = calibration_func['mw_to_rt'](x_lim[0])
-        rt_lim = [rt_min, rt_max]
-
-        # Normalize y over visible RT window
-        mask_range = (x_raw > rt_lim[0]) & (x_raw < rt_lim[1])
-        max_y = np.max(y_raw[mask_range]) if np.any(mask_range) else 1.0
-        y_raw = y_raw / max_y
-
-        # Clip to visible RT window
-        mask = (x_raw >= rt_lim[0]) & (x_raw <= rt_lim[1])
-        x_rt = x_raw[mask]
-        y_formatted = y_raw[mask]
-
-        # For plotting, convert RT to MW (descending x is possible)
-        x_plot = calibration_func['rt_to_mw'](x_rt)
-    else:
-        # RT mode: use x-limits directly
-        rt_lim = x_lim
-        mask_range = (x_raw > rt_lim[0]) & (x_raw < rt_lim[1])
-        max_y = np.max(y_raw[mask_range]) if np.any(mask_range) else 1.0
-        y_raw = y_raw / max_y
-        mask = (x_raw >= rt_lim[0]) & (x_raw <= rt_lim[1])
-        x_rt = x_raw[mask]
-        y_formatted = y_raw[mask]
-        x_plot = x_rt
-        calibration_func = None
-
-    # Baseline correction on the visible window only
-    y_corrected, baseline = baseline_correction(x_rt, y_formatted, x_plot, baseline_method, baseline_ranges)
-
-    # Detect peaks in RT domain
-    x_peaks_rt, y_peaks, n_peaks_found = detect_peaks(
-        x_rt, y_corrected, n_peaks, manual_peaks, peaks_are_mw, calibration_func, x_axis_type
-    )
-
-    # Fit Gaussians
-    best_fit, best_fit_params, best_width = fit_gaussians(
-        x_rt, y_corrected, x_peaks_rt, y_peaks, n_peaks_found, peak_width_range
-    )
-
-    # Gaussian areas and sorting by value (MW or RT)
-    gaussian_results_df = pd.DataFrame(columns=['Peak', 'Value', 'Gaussian Area %'])
-    integration_results_df = pd.DataFrame(columns=['Peak', 'Integration Area', 'Integration Area %'])
-    mw_results_df = pd.DataFrame(columns=['Peak', 'Mn (g/mol)', 'Mw (g/mol)', 'Đ'])
-    residual_results_df = pd.DataFrame(columns=['Component', 'Area', 'Area %'])
-
-    area_percentages = []
-    peak_values = []
-    residual_area = 0.0
-    total_area = 0.0
-
-    if best_fit is not None and len(best_fit_params) > 0:
-        mus = [params[1] for params in best_fit_params]
-        if x_axis_type == "MW":
-            peak_values = [calibration_func['rt_to_mw'](mu) for mu in mus]
-            value_column = 'Mn (g/mol)'  # naming kept for table consistency
+        if calib_array is not None:
+            # Use calibration file
+            retention_time_calib = calib_array[:, 0].astype(float)
+            log_mw_calib = calib_array[:, 1].astype(float)
+            f_log_mw = interp1d(retention_time_calib, log_mw_calib, kind='linear', fill_value='extrapolate')
+            f_rt = interp1d(log_mw_calib, retention_time_calib, kind='linear', fill_value='extrapolate')
+            calibration_func = {
+                'mw_to_rt': lambda mw: f_rt(np.log10(mw)),
+                'rt_to_mw': lambda rt: 10 ** f_log_mw(rt),
+            }
         else:
-            peak_values = mus
-            value_column = 'RT (min)'
+            # Use calibration equation
+            equation_type = calib_equation['type']
+            coeffs = calib_equation['coefficients']
 
-        # Gaussian area percentages over visible RT domain
-        area_integrals = [trapezoid(gauss, x_rt) for gauss in best_fit]
-        total_area = sum(area_integrals) if len(area_integrals) else 0.0
-        area_percentages = [(a / total_area) * 100 if total_area > 0 else 0.0 for a in area_integrals]
+            if equation_type == 'linear':
+                # Equation: log10(MW) = a*RT + b
+                a, b = coeffs
+                calibration_func = {
+                    'mw_to_rt': lambda mw: (np.log10(mw) - b) / a,
+                    'rt_to_mw': lambda rt: 10 ** (a * rt + b),
+                }
+            elif equation_type == 'quadratic':
+                # Equation: log10(MW) = a*RT^2 + b*RT + c
+                a, b, c = coeffs
+                calibration_func = {
+                    'mw_to_rt': lambda mw: np.real((-b + np.sqrt(b ** 2 - 4 * a * (c - np.log10(mw)))) / (2 * a)),
+                    'rt_to_mw': lambda rt: 10 ** (a * rt ** 2 + b * rt + c),
+                }
 
-        # Calculate residual area if enabled
-        if plot_residual:
-            # Calculate sum of enabled gaussians
-            sum_gaussians = np.zeros_like(x_rt)
-            for i, (fit, enabled) in enumerate(zip(best_fit, peak_enabled)):
-                if i < len(peak_enabled) and enabled:
-                    sum_gaussians += fit
+                # Convert MW x-limits to RT limits (higher MW -> lower RT)
+                rt_min = calibration_func['mw_to_rt'](x_lim[1])
+                rt_max = calibration_func['mw_to_rt'](x_lim[0])
+                rt_lim = [rt_min, rt_max]
 
-            # Calculate residual (only positive values)
-            residual = np.maximum(y_corrected - sum_gaussians, 0)
-            residual_area = trapezoid(residual, x_rt)
+                # Normalize y over visible RT window
+                mask_range = (x_raw > rt_lim[0]) & (x_raw < rt_lim[1])
+                max_y = np.max(y_raw[mask_range]) if np.any(mask_range) else 1.0
+                y_raw = y_raw / max_y
 
-            # Update total area to include residual
-            total_area_with_residual = total_area + residual_area
+                # Clip to visible RT window
+                mask = (x_raw >= rt_lim[0]) & (x_raw <= rt_lim[1])
+                x_rt = x_raw[mask]
+                y_formatted = y_raw[mask]
 
-            # Recalculate percentages with residual included
-            if total_area_with_residual > 0:
-                area_percentages = [(a / total_area_with_residual) * 100 for a in area_integrals]
-                residual_percentage = (residual_area / total_area_with_residual) * 100
+                # For plotting, convert RT to MW (descending x is possible)
+                x_plot = calibration_func['rt_to_mw'](x_rt)
             else:
-                residual_percentage = 0.0
+                # RT mode: use x-limits directly
+                rt_lim = x_lim
+                mask_range = (x_raw > rt_lim[0]) & (x_raw < rt_lim[1])
+                max_y = np.max(y_raw[mask_range]) if np.any(mask_range) else 1.0
+                y_raw = y_raw / max_y
+                mask = (x_raw >= rt_lim[0]) & (x_raw <= rt_lim[1])
+                x_rt = x_raw[mask]
+                y_formatted = y_raw[mask]
+                x_plot = x_rt
+                calibration_func = None
 
-        # Sort descending by value
-        sorted_indices = np.argsort(peak_values)[::-1]
-        best_fit = best_fit[sorted_indices]
-        best_fit_params = [best_fit_params[i] for i in sorted_indices]
-        area_percentages = [area_percentages[i] for i in sorted_indices]
-        peak_values = [peak_values[i] for i in sorted_indices]
+                # Baseline correction on the visible window only
+                y_corrected, baseline = baseline_correction(x_rt, y_formatted, x_plot, baseline_method, baseline_ranges)
 
-        # Ensure names/colors length
+                # Detect peaks in RT domain
+                x_peaks_rt, y_peaks, n_peaks_found = detect_peaks(
+                    x_rt, y_corrected, n_peaks, manual_peaks, peaks_are_mw, calibration_func, x_axis_type
+                )
+
+                # Fit Gaussians
+                best_fit, best_fit_params, best_width = fit_gaussians(
+                    x_rt, y_corrected, x_peaks_rt, y_peaks, n_peaks_found, peak_width_range
+                )
+
+                # Gaussian areas and sorting by value (MW or RT)
+                gaussian_results_df = pd.DataFrame(columns=['Peak', 'Value', 'Gaussian Area %'])
+                integration_results_df = pd.DataFrame(columns=['Peak', 'Integration Area', 'Integration Area %'])
+                mw_results_df = pd.DataFrame(columns=['Peak', 'Mn (g/mol)', 'Mw (g/mol)', 'Đ'])
+                residual_results_df = pd.DataFrame(columns=['Component', 'Area', 'Area %'])
+
+                area_percentages = []
+                peak_values = []
+                residual_area = 0.0
+                total_area = 0.0
+
+                if best_fit is not None and len(best_fit_params) > 0:
+                    mus = [params[1] for params in best_fit_params]
+                if x_axis_type == "MW":
+                    peak_values = [calibration_func['rt_to_mw'](mu) for mu in mus]
+                    value_column = 'Mn (g/mol)'  # naming kept for table consistency
+                else:
+                    peak_values = mus
+                    value_column = 'RT (min)'
+
+                # Gaussian area percentages over visible RT domain
+                area_integrals = [trapezoid(gauss, x_rt) for gauss in best_fit]
+                total_area = sum(area_integrals) if len(area_integrals) else 0.0
+                area_percentages = [(a / total_area) * 100 if total_area > 0 else 0.0 for a in area_integrals]
+
+                # Calculate residual area if enabled
+                if plot_residual:
+                # Calculate sum of enabled gaussians
+                    sum_gaussians = np.zeros_like(x_rt)
+                for i, (fit, enabled) in enumerate(zip(best_fit, peak_enabled)):
+                    if i < len(peak_enabled) and enabled:
+                        sum_gaussians += fit
+
+                # Calculate residual (only positive values)
+                residual = np.maximum(y_corrected - sum_gaussians, 0)
+                residual_area = trapezoid(residual, x_rt)
+
+                # Update total area to include residual
+                total_area_with_residual = total_area + residual_area
+
+                # Recalculate percentages with residual included
+                if total_area_with_residual > 0:
+                    area_percentages = [(a / total_area_with_residual) * 100 for a in area_integrals]
+                    residual_percentage = (residual_area / total_area_with_residual) * 100
+                else:
+                    residual_percentage = 0.0
+
+                # Sort descending by value
+                sorted_indices = np.argsort(peak_values)[::-1]
+                best_fit = best_fit[sorted_indices]
+                best_fit_params = [best_fit_params[i] for i in sorted_indices]
+                area_percentages = [area_percentages[i] for i in sorted_indices]
+                peak_values = [peak_values[i] for i in sorted_indices]
+
+                # Ensure names/colors length
         while len(peak_names) < len(best_fit):
             peak_names.append(f"Peak {len(peak_names) + 1}")
         peak_names = peak_names[:len(best_fit)]

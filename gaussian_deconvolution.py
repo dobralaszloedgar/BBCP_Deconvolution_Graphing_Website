@@ -224,6 +224,7 @@ def setup_sidebar_ui():
         params_dict: Dictionary containing all user parameters
         data_file: Uploaded or default data file
         cal_file: Uploaded or default calibration file
+        cal_equation: Calibration equation parameters
     """
 
     st.header("Settings")
@@ -233,6 +234,7 @@ def setup_sidebar_ui():
 
     cal_file = None
     data_file = None
+    cal_equation = None
 
     # File handling
     if data_source == "Use Example Data":
@@ -252,11 +254,41 @@ def setup_sidebar_ui():
     else:
         data_file = st.file_uploader("Chromatogram Data (.txt)", type="txt", key="data_uploader")
         if st.session_state.plot_x_axis == "MW":
-            cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt", key="cal_uploader")
+            # Calibration source selection
+            cal_source = st.radio("Calibration Source:", ["Upload Calibration File", "Enter Calibration Equation"],
+                                  key="cal_source")
+
+            if cal_source == "Upload Calibration File":
+                cal_file = st.file_uploader("Calibration Curve (.txt)", type="txt", key="cal_uploader")
+            else:
+                # Calibration equation input
+                st.subheader("Calibration Equation")
+                equation_type = st.selectbox("Equation Type", ["Linear", "Quadratic"], key="equation_type")
+
+                if equation_type == "Linear":
+                    st.latex(r"\log_{10}(MW) = a \cdot RT + b")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        a = st.number_input("Slope (a)", value=-0.5, format="%.4f", key="linear_a")
+                    with col2:
+                        b = st.number_input("Intercept (b)", value=10.0, format="%.4f", key="linear_b")
+                    cal_equation = {'type': 'linear', 'coefficients': [a, b]}
+
+                else:  # Quadratic
+                    st.latex(r"\log_{10}(MW) = a \cdot RT^2 + b \cdot RT + c")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        a = st.number_input("a coefficient", value=-0.1, format="%.4f", key="quad_a")
+                    with col2:
+                        b = st.number_input("b coefficient", value=2.0, format="%.4f", key="quad_b")
+                    with col3:
+                        c = st.number_input("c coefficient", value=5.0, format="%.4f", key="quad_c")
+                    cal_equation = {'type': 'quadratic', 'coefficients': [a, b, c]}
+
         else:
             cal_file = None
 
-        if cal_file and data_file:
+        if (cal_file or cal_equation) and data_file:
             st.success("Data loaded successfully!")
 
     # X-axis type selection
@@ -286,12 +318,11 @@ def setup_sidebar_ui():
         # Force a rerun to update the UI
         st.rerun()
 
-    if st.session_state.plot_x_axis == "MW" and cal_file is None and data_source == "Upload My Own Data":
-        st.warning("Calibration file required for molecular weight plotting")
+    if st.session_state.plot_x_axis == "MW" and cal_file is None and cal_equation is None and data_source == "Upload My Own Data":
+        st.warning("Calibration file or equation required for molecular weight plotting")
 
     # Number of Peaks
     peaks_n = st.slider("Number Of Peaks", 1, 10, 4, key="peaks_n")
-
 
     # Basic Parameters
     with st.expander("Basic Parameters", expanded=False):
@@ -479,7 +510,7 @@ def setup_sidebar_ui():
     update_button = st.button("Update Graph",
                               help="Manually update the graph (useful when auto-update is disabled)",
                               key="update_button",
-                              use_container_width=True)
+                              width='stretch')
 
     # Compile all parameters into a dictionary
     params_dict = {
@@ -519,7 +550,7 @@ def setup_sidebar_ui():
         'auto_update': auto_update
     }
 
-    return params_dict, data_file, cal_file
+    return params_dict, data_file, cal_file, cal_equation
 
 
 def main():
@@ -575,12 +606,10 @@ def main():
 
     # Main content area - only graph and table
     st.title("Gaussian Deconvolution")
-    st.markdown(
-        "This application demonstrates how to easily create interactive web tools using Streamlit. Explore the features below!")
 
     # SIDEBAR - All settings and parameters
     with st.sidebar:
-        params_dict, data_file, cal_file = setup_sidebar_ui()
+        params_dict, data_file, cal_file, cal_equation = setup_sidebar_ui()
 
     # NEW: Check if data files have changed and clear previous results
     current_data_source = params_dict['data_source']
@@ -653,7 +682,7 @@ def main():
         st.session_state.last_integration_ranges = current_integration_ranges.copy()
 
         # Update graph and table
-        if data_file and (st.session_state.plot_x_axis == "RT" or cal_file):
+        if data_file and (st.session_state.plot_x_axis == "RT" or cal_file or cal_equation):
             try:
                 is_mw = st.session_state.plot_x_axis == "MW"
                 baseline_ranges = parse_ranges(params_dict['baseline_ranges'], is_mw) if params_dict[
@@ -678,21 +707,35 @@ def main():
                     'integration_enabled'] else None
 
                 fig, gaussian_results_df, integration_results_df, mw_results_df, residual_results_df, x_plot, y_corrected, calibration_func = run_deconvolution(
-                    data_array=data, calib_array=calib, x_axis_type=st.session_state.plot_x_axis, x_lim=x_lim,
-                    y_lim=[params_dict['y_low'], params_dict['y_high']], n_peaks=params_dict['peaks_n'],
-                    plot_sum=params_dict['plot_sum'], manual_peaks=manual_peaks,
-                    peaks_are_mw=params_dict['peaks_are_mw'], peak_names=params_dict['custom_names'],
+                    data_array=data,
+                    calib_array=calib,
+                    calib_equation=cal_equation,
+                    x_axis_type=st.session_state.plot_x_axis,
+                    x_lim=x_lim,
+                    y_lim=[params_dict['y_low'], params_dict['y_high']],
+                    n_peaks=params_dict['peaks_n'],
+                    plot_sum=params_dict['plot_sum'],
+                    manual_peaks=manual_peaks,
+                    peaks_are_mw=params_dict['peaks_are_mw'],
+                    peak_names=params_dict['custom_names'],
                     peak_colors=params_dict['custom_colors'],
                     peak_enabled=params_dict['peak_enabled'],
                     peak_width_range=[int(params_dict['w_lo']), int(params_dict['w_hi'])],
-                    baseline_method=params_dict['baseline_method'], baseline_ranges=baseline_ranges,
+                    baseline_method=params_dict['baseline_method'],
+                    baseline_ranges=baseline_ranges,
                     original_data_color=params_dict['original_data_color'],
-                    original_data_label=params_dict['original_data_name'], font_family=params_dict['font_family'],
-                    font_size=params_dict['font_size'], fig_size=(params_dict['fig_width'], params_dict['fig_height']),
-                    x_label=params_dict['x_label'], y_label=params_dict['y_label'],
-                    x_label_style=params_dict['x_label_style'], y_label_style=params_dict['y_label_style'],
-                    legend_style=params_dict['legend_style'], integration_ranges=integration_ranges,
-                    plot_residual=params_dict['plot_residual'], residual_color=params_dict['residual_color'])
+                    original_data_label=params_dict['original_data_name'],
+                    font_family=params_dict['font_family'],
+                    font_size=params_dict['font_size'],
+                    fig_size=(params_dict['fig_width'], params_dict['fig_height']),
+                    x_label=params_dict['x_label'],
+                    y_label=params_dict['y_label'],
+                    x_label_style=params_dict['x_label_style'],
+                    y_label_style=params_dict['y_label_style'],
+                    legend_style=params_dict['legend_style'],
+                    integration_ranges=integration_ranges,
+                    plot_residual=params_dict['plot_residual'],
+                    residual_color=params_dict['residual_color'])
 
                 st.session_state.last_fig, st.session_state.gaussian_table = fig, gaussian_results_df
                 st.session_state.integration_table, st.session_state.mw_table = integration_results_df, mw_results_df
@@ -715,33 +758,33 @@ def main():
 
     # Display results
     if st.session_state.last_fig is not None:
-        st.session_state.graph_placeholder.pyplot(st.session_state.last_fig, dpi=600, use_container_width=True)
+        st.session_state.graph_placeholder.pyplot(st.session_state.last_fig, dpi=600, width='stretch')
 
         with st.session_state.table_placeholder.container():
             if st.session_state.gaussian_table is not None and not st.session_state.gaussian_table.empty:
                 tab1, tab2, tab3, tab4 = st.tabs(
                     ["Gaussian Results", "Integration Results", "Molecular Weight Results", "Residual Results"])
                 with tab1:
-                    st.dataframe(st.session_state.gaussian_table, use_container_width=True)
+                    st.dataframe(st.session_state.gaussian_table, width='stretch')
                 with tab2:
                     if (st.session_state.integration_table is not None and
                             not st.session_state.integration_table.empty and
                             st.session_state.integration_enabled):
-                        st.dataframe(st.session_state.integration_table, use_container_width=True)
+                        st.dataframe(st.session_state.integration_table, width='stretch')
                     else:
                         st.info("Enable peak integration to see integration results.")
                 with tab3:
                     if (st.session_state.mw_table is not None and
                             not st.session_state.mw_table.empty and
                             st.session_state.integration_enabled):
-                        st.dataframe(st.session_state.mw_table, use_container_width=True)
+                        st.dataframe(st.session_state.mw_table, width='stretch')
                     else:
                         st.info("Molecular weight results are available in MW mode with integration enabled.")
                 with tab4:
                     if (st.session_state.residual_table is not None and
                             not st.session_state.residual_table.empty and
                             params_dict['plot_residual']):
-                        st.dataframe(st.session_state.residual_table, use_container_width=True)
+                        st.dataframe(st.session_state.residual_table, width='stretch')
                     else:
                         st.info("Enable residual peak plotting to see residual results.")
 
