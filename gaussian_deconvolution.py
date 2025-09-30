@@ -225,8 +225,6 @@ def setup_sidebar_ui():
         data_file: Uploaded or default data file
         cal_file: Uploaded or default calibration file
     """
-    if st.button("Help"):
-        st.text_area("Displayed Text", "This is the text that appears when the button is clicked.", height=100)
 
     st.header("Settings")
 
