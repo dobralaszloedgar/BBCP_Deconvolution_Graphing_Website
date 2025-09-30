@@ -1,4 +1,7 @@
 [theme]
 base = "dark"
+[server]
+fileWatcherType = "none"
+runOnSave = false
 [client]
 showSidebarNavigation = false
