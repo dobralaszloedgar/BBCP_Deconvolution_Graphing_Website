@@ -680,8 +680,17 @@ def main():
     current_integration_ranges = st.session_state.get('peak_integration_ranges', {})
     integration_ranges_changed = current_integration_ranges != st.session_state.get('last_integration_ranges', {})
 
+    # Check if data was just loaded successfully
+    data_just_loaded = False
+    if data_file and (st.session_state.plot_x_axis == "RT" or cal_file or cal_equation):
+        if st.session_state.last_data_file != current_data_file_name or \
+                st.session_state.last_cal_file != current_cal_file_name or \
+                st.session_state.last_data_source != current_data_source:
+            data_just_loaded = True
+
     should_update = st.session_state.get('update_button', False) or \
-                    (params_dict.get('auto_update', True) and (params_changed or integration_ranges_changed))
+                    (params_dict.get('auto_update', True) and (
+                                params_changed or integration_ranges_changed or data_just_loaded))
 
     if should_update:
         # Store current params for comparison next time
@@ -748,6 +757,10 @@ def main():
                 st.session_state.integration_table, st.session_state.mw_table = integration_results_df, mw_results_df
                 st.session_state.residual_table = residual_results_df
                 st.session_state.x_plot_data, st.session_state.y_corrected_data = x_plot, y_corrected
+                st.session_state.last_data_source = current_data_source
+                st.session_state.last_data_file = current_data_file_name
+                st.session_state.last_cal_file = current_cal_file_name
+
 
             except Exception as e:
                 st.error(f"Error processing files: {str(e)}")
