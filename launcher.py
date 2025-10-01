@@ -200,11 +200,12 @@ def main():
     with col1:
         st.markdown(
             create_card(
-                "Gaussian Deconvolution",
-                "Deconvolute chromatogram data into Gaussian peaks for molecular weight analysis",
+                "Gaussian Deconvolution Tool",
+                "Deconvolute GPC chromatogram data into Gaussian peaks for molecular weight analysis",
                 "📊",
                 "gaussian_deconvolution",
                 disabled=False,
+                badge="Active",
             ),
             unsafe_allow_html=True,
         )

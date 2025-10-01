@@ -652,7 +652,7 @@ def main():
                    f"https://github.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/blob/bd45a9e141d81665d519a5fc374ac240d4b0fe0a/README.md")
 
     # Main content area - only graph and table
-    st.title("Gaussian Deconvolution")
+    st.title("Gaussian Deconvolution Tool")
 
     # SIDEBAR - All settings and parameters
     with st.sidebar:
