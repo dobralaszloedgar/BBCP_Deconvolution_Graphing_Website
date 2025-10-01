@@ -248,7 +248,7 @@ def setup_sidebar_ui():
         st.info("Using example data to demonstrate the deconvolution process.")
         with st.spinner("Loading example data..."):
             DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/data/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
-            DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/data/GPC%20Data/11.15.2024_GB_GRAFT_PS-b-2PLA.txt"
+            DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/data/GPC%20Data/Sample_GPC_Data.txt"
 
             cal_path = download_default_file(DEFAULT_CAL_URL, "default_cal.txt")
             data_path = download_default_file(DEFAULT_DATA_URL, "default_data.txt")
@@ -304,7 +304,7 @@ def setup_sidebar_ui():
     use_mw = st.toggle(
         "Retention Time ↔ Molecular Weight",
         value=(st.session_state.plot_x_axis == "MW"),
-        help="Toggle between Molecular Weight and Retention Time for X-axis",
+        help="Toggle between Retention Time and Molecular Weight for x-axis",
         key="x_axis_toggle"
     )
 
