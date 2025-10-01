@@ -245,7 +245,7 @@ def setup_sidebar_ui():
 
     # File handling
     if data_source == "Use Example Data":
-        st.info("Using example data to demonstrate the deconvolution process.")
+        st.info("Using example data to demonstrate the deconvolution process")
         with st.spinner("Loading example data..."):
             DEFAULT_CAL_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/data/Calibration%20Curves/RI%20Calibration%20Curve%202024%20September.txt"
             DEFAULT_DATA_URL = "https://raw.githubusercontent.com/dobralaszloedgar/BBCP_Deconvolution_Graphing_Website/refs/heads/master/data/GPC%20Data/Sample_GPC_Data.txt"
@@ -545,7 +545,7 @@ def setup_sidebar_ui():
                                     key="legend_style")
 
     # Auto-update and manual update controls
-    auto_update = st.checkbox("Auto-update graph", value=True,
+    auto_update = st.checkbox("Auto-Update Graph", value=True,
                               help="Automatically update graph when parameters change",
                               key="auto_update")
 
@@ -815,7 +815,7 @@ def main():
                             except Exception:
                                 pass
         elif params_dict['data_source'] == "Upload My Own Data":
-            st.info("Upload your data and calibration files to begin.")
+            st.info("Upload your data files to begin.")
 
     # Display results
     if st.session_state.last_fig is not None:
