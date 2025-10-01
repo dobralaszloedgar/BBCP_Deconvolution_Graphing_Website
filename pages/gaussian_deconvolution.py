@@ -336,16 +336,16 @@ def setup_sidebar_ui():
     # Basic Parameters
     with st.expander("Basic Parameters", expanded=False):
         if st.session_state.plot_x_axis == "MW":
-            mw_min = st.number_input("MW Lower Bound", 1e2, 1e8, 1e3, step=100.0, format="%e", key="mw_min")
-            mw_max = st.number_input("MW Upper Bound", 1e3, 1e10, 1e7, step=10000.0, format="%e", key="mw_max")
+            mw_min = st.number_input("MW Lower Bound", 1e1, 1e9, 1e3, step=100.0, format="%e", key="mw_min")
+            mw_max = st.number_input("MW Upper Bound", 1e2, 1e10, 1e7, step=10000.0, format="%e", key="mw_max")
         else:
             rt_min = st.number_input("RT Lower Bound (min)", 0.0, 100.0, 8.0, step=0.1, key="rt_min")
             rt_max = st.number_input("RT Upper Bound (min)", 0.0, 100.0, 19.0, step=0.1, key="rt_max")
 
-        w_lo = st.number_input("Peak Width Search: Start", 20, 800, 100, step=10, key="w_lo")
-        w_hi = st.number_input("Peak Width Search: End", 50, 800, 400, step=10, key="w_hi")
-        y_low = st.number_input("Y-Axis Lower", -1.0, 0.99, -0.02, step=0.01, key="y_low")
-        y_high = st.number_input("Y-Axis Upper", 0.1, 100.0, 1.05, step=0.01, key="y_high")
+        w_lo = st.number_input("Peak Width Search: Start", 10, 800, 100, step=10, key="w_lo")
+        w_hi = st.number_input("Peak Width Search: End", 20, 800, 400, step=10, key="w_hi")
+        y_low = st.number_input("Y-Axis Lower", -100.0, 100.0, -0.02, step=0.01, key="y_low")
+        y_high = st.number_input("Y-Axis Upper", -99.0, 101.0, 1.05, step=0.01, key="y_high")
 
         # Manual peaks - NEW IMPROVED INTERFACE
         unit_label = "MW" if st.session_state.plot_x_axis == "MW" else "RT (min)"
